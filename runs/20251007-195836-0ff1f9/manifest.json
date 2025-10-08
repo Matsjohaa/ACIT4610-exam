@@ -1,0 +1,9 @@
+{
+  "env_map": "8x8",
+  "episodes": 20000,
+  "epsilon_schedule": "exp",
+  "alpha": 0.8,
+  "gamma": 0.99,
+  "seed": 42,
+  "run_dir": "/Users/kristina/ACIT4610_exam/ACIT4610-exam/runs/20251007-195836-0ff1f9"
+}
