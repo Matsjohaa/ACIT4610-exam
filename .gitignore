@@ -205,3 +205,22 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ===================================
+# Problem 1: Bin Packing ACO
+# ===================================
+
+# Results (generated outputs - don't commit)
+problem1_bin_packing_aco/results/plots/
+problem1_bin_packing_aco/results/logs/
+problem1_bin_packing_aco/results/tables/
+
+# Keep directory structure
+!problem1_bin_packing_aco/results/plots/.gitkeep
+!problem1_bin_packing_aco/results/logs/.gitkeep
+!problem1_bin_packing_aco/results/tables/.gitkeep
+
+# Data: Commit OR-Library benchmarks (small, important for reproducibility)
+# If files become too large, uncomment below and use download script instead:
+# problem1_bin_packing_aco/data/raw/*.txt
+# !problem1_bin_packing_aco/data/raw/.gitkeep
