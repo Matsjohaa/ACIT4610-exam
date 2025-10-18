@@ -12,7 +12,7 @@ Classification:
 from __future__ import annotations
 
 import random
-from typing import List, Set
+from typing import List, Set, Sequence
 
 
 class NegativeSelectionClassifier:
@@ -24,6 +24,8 @@ class NegativeSelectionClassifier:
 		overlap_threshold: int = 2,
 		max_attempts: int = 20000,
 		seed: int = 42,
+		min_activations: int = 1,
+		weights: Sequence[float] | None = None,
 	) -> None:
 		self.vocab_size = vocab_size
 		self.num_detectors = num_detectors
@@ -31,11 +33,38 @@ class NegativeSelectionClassifier:
 		self.overlap_threshold = overlap_threshold
 		self.max_attempts = max_attempts
 		self.seed = seed
+		self.weights = list(weights) if weights is not None else None
+		self.min_activations = min_activations
 		self.detectors: List[Set[int]] = []
 
 	# ---------------- Internal helpers ---------------- #
 	def _random_detector(self) -> Set[int]:
-		return set(random.sample(range(self.vocab_size), self.detector_size))
+		if not self.weights:
+			return set(random.sample(range(self.vocab_size), self.detector_size))
+		# Weighted sampling without replacement: simple approach using cumulative weights.
+		indices = list(range(self.vocab_size))
+		chosen: Set[int] = set()
+		weights_local = self.weights
+		for _ in range(self.detector_size):
+			# Compute cumulative distribution over remaining indices
+			remaining = [i for i in indices if i not in chosen]
+			w_sum = sum(weights_local[i] for i in remaining)
+			# Guard against zero division
+			if w_sum == 0:
+				# Fallback to uniform
+				picked = random.choice(remaining)
+				chosen.add(picked)
+				continue
+			threshold = random.random() * w_sum
+			cuml = 0.0
+			picked = remaining[-1]
+			for i in remaining:
+				cuml += weights_local[i]
+				if cuml >= threshold:
+					picked = i
+					break
+			chosen.add(picked)
+		return chosen
 
 	def _matches(self, sample: Set[int], detector: Set[int]) -> bool:
 		return len(sample & detector) >= self.overlap_threshold
@@ -58,11 +87,15 @@ class NegativeSelectionClassifier:
 		return self
 
 	def predict(self, X_sets: List[Set[int]]):
-		"For each message set, if ANY detector overlaps the message at least overlap_threshold, predict spam (1); else ham (0)."
+		"""Classify each sample.
+
+		Count activations (detectors whose overlap >= overlap_threshold) and
+		predict spam if activations >= min_activations; else ham.
+		"""
 		preds: List[int] = []
 		for s in X_sets:
-			is_spam = any(self._matches(s, d) for d in self.detectors)
-			preds.append(1 if is_spam else 0)
+			activations = sum(1 for d in self.detectors if self._matches(s, d))
+			preds.append(1 if activations >= self.min_activations else 0)
 		return preds
 
 

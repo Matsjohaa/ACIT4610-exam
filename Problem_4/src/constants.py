@@ -24,14 +24,20 @@ VOCAB_MIN_FREQ: int = 2
 VOCAB_MAX_SIZE: int = 4000
 
 # NSA (Negative Selection Algorithm) hyperparameters
-NSA_NUM_DETECTORS: int = 600
+NSA_NUM_DETECTORS: int = 1000  # increase detector pool for broader spam coverage
 NSA_DETECTOR_SIZE: int = 4
-NSA_OVERLAP_THRESHOLD: int = 2
-NSA_MAX_ATTEMPTS: int = 30_000
+NSA_OVERLAP_THRESHOLD: int = 1  # lower threshold to allow weaker overlaps, boosting recall
+NSA_MAX_ATTEMPTS: int = 60_000  # allow more attempts to find non-self detectors
 
 # Future configurable options (placeholders for extensions)
 # Require at least this many detectors to fire to call spam (currently unused)
-NSA_MIN_ACTIVATIONS: int = 1
+NSA_MIN_ACTIVATIONS: int = 2  # require at least 2 detectors to fire to mitigate precision loss from lower threshold
+
+# Optional spam-guided detector weighting:
+# If enabled, detector tokens are sampled with probability proportional to (spam_freq+1)/(ham_freq+1) ** NSA_WEIGHT_EXP
+# to emphasize tokens characteristic of spam. This can improve recall on imbalanced datasets.
+NSA_USE_SPAM_WEIGHTS: bool = True
+NSA_WEIGHT_EXP: float = 1.5  # increase (>1) to amplify differences
 
 # Output / results configuration
 # Store misclassification files inside a dedicated 'results/' subdirectory under Problem_4
@@ -42,6 +48,10 @@ RESULTS_DIR = _PROBLEM_ROOT / "results"
 MISCLASS_FP_FILENAME = "false_positives.tsv"  # ham predicted spam
 MISCLASS_FN_FILENAME = "false_negatives.tsv"  # spam predicted ham
 MISCLASS_INCLUDE_HEADER = True
+
+# Additional result files for correctly classified examples
+TRUE_POS_FILENAME = "true_positives.tsv"   # spam predicted spam
+TRUE_NEG_FILENAME = "true_negatives.tsv"   # ham predicted ham
 
 __all__ = [
 	"SEED",
@@ -58,5 +68,7 @@ __all__ = [
 	"MISCLASS_FP_FILENAME",
 	"MISCLASS_FN_FILENAME",
 	"MISCLASS_INCLUDE_HEADER",
+	"TRUE_POS_FILENAME",
+	"TRUE_NEG_FILENAME",
 ]
 
