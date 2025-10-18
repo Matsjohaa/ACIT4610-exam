@@ -16,9 +16,19 @@ from typing import Dict, List, Sequence, Tuple
 
 
 def clean_text(text: str) -> str:
-	text = text.lower()
-	text = re.sub(r"[^a-z0-9\s]", " ", text)
-	text = re.sub(r"\s+", " ", text).strip()
+	"""Return text unchanged, preserving original casing and punctuation.
+
+	The previous implementation aggressively normalized (lowercased, stripped non-alphanumerics),
+	which can remove potentially discriminative spam signals (e.g., repeated !!!, currency symbols, casing).
+	Per user request, this function now acts as a passthrough.
+
+	If later you want a middle ground, consider:
+	- Adding lightweight normalization (e.g., collapse whitespace) without losing symbols.
+	- Tagging patterns (URLs, numbers) rather than deleting characters.
+	"""
+	#text = text.lower()
+	#text = re.sub(r"[^a-z0-9\s]", " ", text)
+	#text = re.sub(r"\s+", " ", text).strip()
 	return text
 
 
@@ -38,6 +48,8 @@ def load_data(tsv_path: str) -> Tuple[List[str], List[int]]:
 
 
 def train_test_split(texts: Sequence[str], labels: Sequence[int], test_ratio: float = 0.2, seed: int = 42):
+	"Divides the dataset into training and testing sets, based on the specified test ratio in constants.py"
+	
 	import random
 
 	idx = list(range(len(texts)))
@@ -52,6 +64,7 @@ def train_test_split(texts: Sequence[str], labels: Sequence[int], test_ratio: fl
 
 
 def build_vocabulary(texts: Sequence[str], min_freq: int = 2, max_size: int = 5000):
+	"Build vocabulary from texts. Return list of words and word-to-index mapping."
 	counter: Counter[str] = Counter()
 	for t in texts:
 		counter.update(t.split())
@@ -62,6 +75,7 @@ def build_vocabulary(texts: Sequence[str], min_freq: int = 2, max_size: int = 50
 
 
 def texts_to_sets(texts: Sequence[str], vocab_index: Dict[str, int]):
+	"Convert texts to list of sets of token IDs based on the provided vocabulary index."
 	reps = []
 	for t in texts:
 		token_ids = {vocab_index[w] for w in t.split() if w in vocab_index}

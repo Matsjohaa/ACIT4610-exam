@@ -35,6 +35,11 @@ def classification_report(y_true: Sequence[int], y_pred: Sequence[int]) -> Dict[
 	"""Compute standard binary classification metrics.
 
 	Returns a dict containing accuracy, precision, recall, f1 and raw counts.
+
+	accuracy = (tp + tn) / total
+	precision = tp / (tp + fp)
+	recall = tp / (tp + fn)
+	f1 = 2 * (precision * recall) / (precision + recall)
 	"""
 	tp, tn, fp, fn = compute_confusion(y_true, y_pred)
 	precision = tp / (tp + fp) if (tp + fp) else 0.0

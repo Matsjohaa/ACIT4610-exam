@@ -34,7 +34,9 @@ NSA_MAX_ATTEMPTS: int = 30_000
 NSA_MIN_ACTIVATIONS: int = 1
 
 # Output / results configuration
-RESULTS_DIR = Path("Problem_4/results")
+# Store misclassification files inside a dedicated 'results/' subdirectory under Problem_4
+# to keep the root clean and group experiment artifacts.
+RESULTS_DIR = _PROBLEM_ROOT / "results"
 # File format choice: TSV keeps consistency with source dataset, human readable, simple to parse.
 # (If messages could contain tabs/newlines, consider JSON Lines instead.)
 MISCLASS_FP_FILENAME = "false_positives.tsv"  # ham predicted spam

@@ -42,6 +42,8 @@ class NegativeSelectionClassifier:
 
 	# ---------------- Public API ---------------- #
 	def fit(self, X_sets: List[Set[int]], y: List[int]):
+		"Generates random candidate detectors (sets of token indices of size detector_size). "
+		"Rejects any candidate that “matches” (overlaps >= overlap_threshold) ANY ham training sample. Stops when it has num_detectors or hits max_attempts."
 		random.seed(self.seed)
 		self.detectors = []
 		self_samples = [s for s, label in zip(X_sets, y) if label == 0]
@@ -56,6 +58,7 @@ class NegativeSelectionClassifier:
 		return self
 
 	def predict(self, X_sets: List[Set[int]]):
+		"For each message set, if ANY detector overlaps the message at least overlap_threshold, predict spam (1); else ham (0)."
 		preds: List[int] = []
 		for s in X_sets:
 			is_spam = any(self._matches(s, d) for d in self.detectors)
