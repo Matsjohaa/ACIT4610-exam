@@ -84,6 +84,9 @@ class NegativeSelectionClassifier:
 				continue
 			self.detectors.append(cand)
 			attempts += 1
+		# Stats
+		self.attempts_used = attempts
+		self.detectors_count = len(self.detectors)
 		return self
 
 	def predict(self, X_sets: List[Set[int]]):
@@ -97,6 +100,22 @@ class NegativeSelectionClassifier:
 			activations = sum(1 for d in self.detectors if self._matches(s, d))
 			preds.append(1 if activations >= self.min_activations else 0)
 		return preds
+
+	def predict_with_scores(self, X_sets: List[Set[int]]):
+		"""Return tuple (predictions, activation_counts) where activation_counts is the
+		number of detectors that matched each sample. This can be used as a score for
+		ROC/PR curves (higher means more evidence of spam)."""
+		preds: List[int] = []
+		acts: List[int] = []
+		for s in X_sets:
+			activations = sum(1 for d in self.detectors if self._matches(s, d))
+			acts.append(activations)
+			preds.append(1 if activations >= self.min_activations else 0)
+		return preds, acts
+
+	def activation_counts(self, X_sets: List[Set[int]]):
+		"""Return activation counts only (helper for coverage curve)."""
+		return [sum(1 for d in self.detectors if self._matches(s, d)) for s in X_sets]
 
 
 __all__ = ["NegativeSelectionClassifier"]

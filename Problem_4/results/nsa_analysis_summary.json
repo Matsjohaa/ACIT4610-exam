@@ -1,0 +1,29 @@
+{
+  "dataset": "SMS Spam Collection",
+  "total_samples": 5572,
+  "train_samples": 4012,
+  "val_samples": 445,
+  "test_samples": 1115,
+  "spam_ratio": 0.13406317300789664,
+  "vocab_size": 4000,
+  "best_params": {
+    "num_detectors": 500,
+    "detector_size": 3,
+    "overlap_threshold": 1,
+    "min_activations": 1
+  },
+  "test_metrics": {
+    "accuracy": 0.9551569506726457,
+    "precision": 0.8271604938271605,
+    "recall": 0.8589743589743589,
+    "f1": 0.8427672955974842,
+    "roc_auc": 0.9236818534263791,
+    "pr_auc": 0.846762932038587
+  },
+  "detector_stats": {
+    "detectors_generated": 500,
+    "avg_pairwise_overlap": 0.0021378757515030065,
+    "avg_activations_ham": 0.08029197080291971,
+    "avg_activations_spam": 8.525641025641026
+  }
+}

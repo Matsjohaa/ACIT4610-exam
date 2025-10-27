@@ -17,7 +17,9 @@ SEED: int | None = None
 _THIS_DIR = Path(__file__).resolve().parent
 _PROBLEM_ROOT = _THIS_DIR.parent  # .../Problem_4
 DATA_PATH = _PROBLEM_ROOT / "data" / "sms_spam.tsv"
-TEST_RATIO: float = 0.2
+
+TEST_RATIO: float = 0.2 
+VAL_RATIO: float = 0.1  #remainder after these two goes to training
 
 # Vocabulary / text processing
 VOCAB_MIN_FREQ: int = 2
@@ -57,6 +59,7 @@ __all__ = [
 	"SEED",
 	"DATA_PATH",
 	"TEST_RATIO",
+	"VAL_RATIO",
 	"VOCAB_MIN_FREQ",
 	"VOCAB_MAX_SIZE",
 	"NSA_NUM_DETECTORS",

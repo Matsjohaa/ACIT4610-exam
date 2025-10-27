@@ -63,6 +63,36 @@ def train_test_split(texts: Sequence[str], labels: Sequence[int], test_ratio: fl
 	return X_train, y_train, X_test, y_test
 
 
+def train_val_test_split(
+	texts: Sequence[str],
+	labels: Sequence[int],
+	test_ratio: float = 0.2,
+	val_ratio: float = 0.1,
+	seed: int = 42,
+):
+	"""Split into train/validation/test.
+
+	val_ratio is applied to the remaining portion after test split.
+	Example: test_ratio=0.2, val_ratio=0.1 => 20% test, 10% of remaining 80% (=8%) validation, 72% train.
+	"""
+	import random
+	idx = list(range(len(texts)))
+	random.Random(seed).shuffle(idx)
+	test_cut = int(len(idx) * (1 - test_ratio))
+	train_val_idx, test_idx = idx[:test_cut], idx[test_cut:]
+	# Validation from train_val pool
+	val_count = int(len(train_val_idx) * val_ratio)
+	val_idx = train_val_idx[:val_count]
+	train_idx = train_val_idx[val_count:]
+	X_train = [texts[i] for i in train_idx]
+	y_train = [labels[i] for i in train_idx]
+	X_val = [texts[i] for i in val_idx]
+	y_val = [labels[i] for i in val_idx]
+	X_test = [texts[i] for i in test_idx]
+	y_test = [labels[i] for i in test_idx]
+	return X_train, y_train, X_val, y_val, X_test, y_test
+
+
 def build_vocabulary(texts: Sequence[str], min_freq: int = 2, max_size: int = 5000):
 	"Build vocabulary from texts. Return list of words and word-to-index mapping."
 	counter: Counter[str] = Counter()
@@ -87,6 +117,7 @@ __all__ = [
 	"clean_text",
 	"load_data",
 	"train_test_split",
+	"train_val_test_split",
 	"build_vocabulary",
 	"texts_to_sets",
 ]
