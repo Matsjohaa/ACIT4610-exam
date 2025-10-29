@@ -1,12 +1,14 @@
 import numpy as np
 from typing import List
-from ..constants import PERFECT_FIT_BONUS, EPSILON
+from ..constants import EPSILON
 
 def tight_fit_heuristic(item_size: int, bin_load: int, capacity: int) -> float:
     """
-    Heuristic that prefers tight fits.
+    Weak heuristic - normalized to [0, 1] range.
     
-    Higher value = better fit. Prefers bins that will be filled almost completely.
+    This gives ACO more room to learn patterns through pheromone trails.
+    The heuristic provides a gentle bias toward fuller bins, but doesn't
+    dominate the decision-making process.
     
     Args:
         item_size: Size of item to place
@@ -14,7 +16,7 @@ def tight_fit_heuristic(item_size: int, bin_load: int, capacity: int) -> float:
         capacity: Bin capacity
     
     Returns:
-        Heuristic value (higher is better)
+        Heuristic value in [0, 1], where higher = slightly better fit
     """
     remaining = capacity - bin_load
     
@@ -22,15 +24,13 @@ def tight_fit_heuristic(item_size: int, bin_load: int, capacity: int) -> float:
     if item_size > remaining:
         return 0.0
     
-    # Perfect fit gets highest value
-    if item_size == remaining:
-        return PERFECT_FIT_BONUS
+    # Calculate fill ratio after adding item
+    # This gives a gentle preference to fuller bins
+    fill_ratio = (bin_load + item_size) / capacity
     
-    # Otherwise, prefer fuller bins (less wasted space)
-    wasted_space = remaining - item_size
-    eta = 1.0 / (wasted_space + EPSILON)
-    
-    return eta
+    # Return normalized value in (0, 1]
+    # Perfect fit gets 1.0, empty bin gets item_size/capacity
+    return fill_ratio
 
 
 def best_fit_heuristic(item_size: int, bin_loads: List[int], capacity: int) -> np.ndarray:

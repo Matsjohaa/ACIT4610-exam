@@ -77,12 +77,26 @@ class Ant:
         if len(feasible_bins) == 1:
             return feasible_bins[0]
         
+        # If alpha=0 and beta=0, use pure random (for testing worst case)
+        if self.alpha == 0 and self.beta == 0:
+            return np.random.choice(feasible_bins)
+        
         # Compute probabilities
         probabilities = []
         
         for b in feasible_bins:
-            tau = pheromone.get(item_idx, b) ** self.alpha
-            eta = tight_fit_heuristic(item_size, self.bin_loads[b], self.capacity) ** self.beta
+            # Pheromone contribution
+            if self.alpha > 0:
+                tau = pheromone.get(item_idx, b) ** self.alpha
+            else:
+                tau = 1.0
+            
+            # Heuristic contribution
+            if self.beta > 0:
+                eta = tight_fit_heuristic(item_size, self.bin_loads[b], self.capacity) ** self.beta
+            else:
+                eta = 1.0
+            
             probabilities.append(tau * eta)
         
         probabilities = np.array(probabilities)

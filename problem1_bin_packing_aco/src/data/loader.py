@@ -21,26 +21,25 @@ def load_beasley_format(filepath: str) -> List[BinPackingInstance]:
     Load bin packing instances from OR-Library Beasley format.
     
     Format:
-    - Line 1: number of items in first instance
-    - Line 2: instance name
-    - Line 3: capacity n_items optimal_bins
-    - Next n_items lines: item sizes
-    - Repeat for each instance
+    - Line 1: number of instances in file
+    - For each instance:
+      - Line: instance name
+      - Line: capacity n_items optimal_bins
+      - Next n_items lines: item sizes
     """
     instances = []
     
     with open(filepath, 'r') as f:
         lines = [line.strip() for line in f.readlines()]
     
-    i = 0
-    while i < len(lines):
-        if not lines[i]:  # Skip empty lines
+    # First line is number of instances
+    n_instances = int(lines[0])
+    i = 1
+    
+    for _ in range(n_instances):
+        # Skip empty lines
+        while i < len(lines) and not lines[i]:
             i += 1
-            continue
-            
-        # Read number of items
-        n_items = int(lines[i])
-        i += 1
         
         # Read instance name
         name = lines[i].strip()
@@ -48,17 +47,15 @@ def load_beasley_format(filepath: str) -> List[BinPackingInstance]:
         
         # Read capacity, n_items, optimal
         parts = lines[i].split()
-        capacity = int(parts[0])
-        n_items_check = int(parts[1])
-        optimal = int(parts[2]) if len(parts) > 2 else None
+        capacity = int(float(parts[0]))  # Handle both int and float formats
+        n_items = int(parts[1])
+        optimal = int(float(parts[2])) if len(parts) > 2 else None
         i += 1
-        
-        assert n_items == n_items_check, f"Mismatch in number of items for {name}"
         
         # Read item sizes
         items = []
         for _ in range(n_items):
-            items.append(int(lines[i]))
+            items.append(int(float(lines[i])))  # Handle both int and float formats
             i += 1
         
         instances.append(BinPackingInstance(name, capacity, items, optimal))
