@@ -11,6 +11,7 @@ from src.data.loader import load_beasley_format
 from src.algorithm.aco import ACO_BinPacking
 from src.algorithm.baseline import first_fit_decreasing
 from src.algorithm.constants import FAST
+from src.logging import RunLogger
 
 
 def load_instance(name: str):
@@ -38,13 +39,30 @@ def main():
     parser = argparse.ArgumentParser(description="Run FAST preset ACO and FFD baseline on one instance")
     parser.add_argument("--instance", default="u500_02", help="Instance name, e.g. u120_00")
     parser.add_argument("--no-baseline", action="store_true", help="Skip the FFD comparison run")
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        help="Optional directory to store iteration-level CSV logs",
+    )
     args = parser.parse_args()
 
     instance = load_instance(args.instance)
     print(f"Instance: {instance.name} | Items: {instance.n_items} | Capacity: {instance.capacity}")
 
     aco = ACO_BinPacking(**FAST)
-    aco_result = aco.solve(instance)
+
+    logger = None
+    if args.log_dir is not None:
+        logger = RunLogger(
+            base_dir=args.log_dir,
+            filename=f"{instance.name}_aco_log.csv",
+            metadata={'runner': 'quick_test'},
+        )
+
+    aco_result = aco.solve(
+        instance,
+        logger=logger,
+    )
     print("ACO result")
     print(f"  bins   : {aco_result['n_bins']}")
     if aco_result['gap'] is not None:

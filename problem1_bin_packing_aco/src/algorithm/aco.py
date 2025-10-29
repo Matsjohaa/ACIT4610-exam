@@ -1,10 +1,12 @@
-import numpy as np
-from typing import List, Tuple, Dict
 import time
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 from .components.ant import Ant
 from .components.pheromone import PheromoneMatrix
 from ..data.loader import BinPackingInstance
 from .constants import TAU_0
+from ..logging import RunLogger
 
 class ACO_BinPacking:
     """Ant Colony Optimization for Bin Packing."""
@@ -43,7 +45,12 @@ class ACO_BinPacking:
         self.convergence_history = []
         self.iteration_best_history = []
     
-    def solve(self, instance: BinPackingInstance) -> Dict:
+    def solve(
+        self,
+        instance: BinPackingInstance,
+        logger: Optional[RunLogger] = None,
+        logger_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
         """
         Solve a bin packing instance.
         
@@ -58,6 +65,23 @@ class ACO_BinPacking:
         items = instance.items
         capacity = instance.capacity
         n_items = len(items)
+
+        if logger is not None:
+            combined_metadata: Dict[str, Any] = {
+                'instance_name': instance.name,
+                'n_items': n_items,
+                'capacity': capacity,
+                'alpha': self.alpha,
+                'beta': self.beta,
+                'rho': self.rho,
+                'Q': self.Q,
+                'n_ants': self.n_ants,
+                'n_iterations': self.n_iterations,
+                'use_ffd_order': self.use_ffd_order,
+            }
+            if logger_metadata:
+                combined_metadata.update(logger_metadata)
+            logger.update_metadata(**combined_metadata)
         
         # Determine item order (FFD: decreasing size)
         if self.use_ffd_order:
@@ -109,6 +133,21 @@ class ACO_BinPacking:
             # Record convergence
             self.convergence_history.append(self.best_n_bins)
             self.iteration_best_history.append(iteration_best_bins)
+
+            if logger is not None:
+                elapsed_ms = (time.time() - start_time) * 1000
+                unused_capacity = None
+                if self.best_solution is not None:
+                    current_loads = self._get_bin_loads(self.best_solution, items, capacity)
+                    unused_capacity = sum(capacity - load for load in current_loads)
+
+                logger.log_iteration(
+                    iteration=iteration + 1,
+                    best_boxes=self.best_n_bins,
+                    iteration_best_boxes=iteration_best_bins,
+                    unused_capacity=unused_capacity,
+                    runtime_ms=elapsed_ms,
+                )
             
             # Print progress
             if (iteration + 1) % 10 == 0:
@@ -133,6 +172,9 @@ class ACO_BinPacking:
             'convergence': self.convergence_history,
             'iteration_best': self.iteration_best_history
         }
+
+        if logger is not None:
+            logger.flush()
         
         return results
     
