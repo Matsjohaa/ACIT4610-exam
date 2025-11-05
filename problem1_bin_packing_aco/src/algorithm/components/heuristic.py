@@ -31,23 +31,3 @@ def tight_fit_heuristic(item_size: int, bin_load: int, capacity: int) -> float:
     # Return normalized value in (0, 1]
     # Perfect fit gets 1.0, empty bin gets item_size/capacity
     return fill_ratio
-
-
-def best_fit_heuristic(item_size: int, bin_loads: List[int], capacity: int) -> np.ndarray:
-    """
-    Best-fit heuristic for all bins.
-    
-    Args:
-        item_size: Size of item to place
-        bin_loads: Current loads in all bins
-        capacity: Bin capacity
-    
-    Returns:
-        Array of heuristic values for each bin
-    """
-    eta = np.zeros(len(bin_loads))
-    
-    for i, load in enumerate(bin_loads):
-        eta[i] = tight_fit_heuristic(item_size, load, capacity)
-    
-    return eta

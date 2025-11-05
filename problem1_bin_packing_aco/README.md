@@ -1,48 +1,90 @@
-# Bin Packing with Ant Colony Optimisation
+# Bin Packing with Ant Colony Optimization
 
-ACO implementation for the 1-D bin packing benchmarks from the OR-Library. The objective is to use as few bins as possible while respecting the capacity of each bin.
+ACO implementation for the 1-D bin packing problem using benchmarks from the OR-Library. The goal is to pack items into the minimum number of bins without exceeding bin capacity.
+
+## Algorithm Overview
+
+**Ant Colony Optimization (ACO)** is a metaheuristic inspired by how ants find shortest paths using pheromone trails.
+
+### How it works:
+
+1. **Initialization**: Start with uniform pheromone trails on all (item, bin) assignments.
+
+2. **Construction Phase** (each iteration):
+
+   - Each ant builds a complete packing solution
+   - For each item, the ant probabilistically selects a bin based on:
+     - **Pheromone (τ)**: What worked well in past iterations
+     - **Heuristic (η)**: Tight-fit preference (fuller bins = better)
+   - Selection probability: `P(bin) ∝ (τ^α) × (η^β)`
+   - Items are processed in random order (different per ant)
+
+3. **Pheromone Update**:
+
+   - **Evaporation**: All pheromone trails decay by factor `(1 - ρ)`
+   - **Deposit**: Only the best ant from this iteration reinforces its (item, bin) decisions
+   - Deposit amount: `Q / n_bins` (better solutions deposit more)
+
+4. **Convergence**: Over iterations, strong pheromone trails emerge on good assignments, guiding future ants toward high-quality packings.
+
+### Key Parameters:
+
+- `α` (alpha): Pheromone importance (how much we trust past experience)
+- `β` (beta): Heuristic importance (how much we follow greedy tight-fit)
+- `ρ` (rho): Evaporation rate (higher = faster forgetting)
+- `Q`: Pheromone deposit scaling factor
+- `n_ants`: Colony size
+- `n_iterations`: Number of search iterations
 
 ## Data
 
-Benchmark instances are already stored in `data/raw/`. We use the files `binpack1.txt` … `binpack4.txt` (uniform instances with 120–1000 items).
+Benchmark instances from OR-Library are in `data/raw/`:
 
-## Quick start
+- `binpack1.txt`: 120-item uniform instances (u120_00 ... u120_19)
+- `binpack2.txt`: 250-item uniform instances (u250_00 ... u250_19)
+- `binpack3.txt`: 500-item uniform instances (u500_00 ... u500_19)
+- `binpack4.txt`: 1000-item uniform instances (u1000_00 ... u1000_19)
 
-Run commands from the project root (`problem1_bin_packing_aco/`).
+## Quick Start
+
+Run from the project root (`problem1_bin_packing_aco/`):
 
 ```bash
-# Quick sanity check (instance u500_02, FAST preset + FFD baseline)
+# Default: u500_02 with FAST preset + FFD baseline
 python3 quick_test.py
 
-# Choose a different benchmark instance
+# Choose a specific instance
 python3 quick_test.py --instance u120_00
+python3 quick_test.py --instance u250_05
+python3 quick_test.py --instance u1000_10
 
-# Run only ACO (skip baseline heuristics)
-python3 quick_test.py --no-baseline
+# Try different presets on the same instance
+python3 quick_test.py --instance u500_02 --preset QUICK_TEST
+python3 quick_test.py --instance u500_02 --preset BALANCED
+python3 quick_test.py --instance u500_02 --preset INTENSIVE
 
-# Compare alternative presets defined in src/algorithm/constants.py
-python3 quick_test.py --preset BALANCED
-python3 quick_test.py --preset INTENSIVE
+# Combine instance + preset + skip baseline
+python3 quick_test.py --instance u120_00 --preset INTENSIVE --no-baseline
+
+# Save iteration logs to CSV (for plotting convergence later)
+python3 quick_test.py --instance u500_02 --log-dir results/my_run
 ```
 
 ## Results
 
-- ACO prints summary statistics (bins, gap, runtime, unused capacity) in the terminal.
-- Baseline `FFD` is shown for reference so we can judge improvements quickly.
+- **Terminal**: Summary statistics (bins used, gap from optimal, runtime, unused capacity)
+- **Baseline**: FFD (First-Fit Decreasing) shown for reference
+- **CSV logs**: Optional (use `--log-dir` flag) for plotting convergence
 
-## Presets (see `src/algorithm/constants.py`)
+## Presets
 
-- `QUICK_TEST`: small colony, useful for debugging.
-- `FAST`: default preset, uses FFD item order; usually matches FFD quality fast.
-- `BALANCED`: disables FFD order to let pheromones learn the packing pattern.
-- `INTENSIVE`: large colony and more iterations for deeper exploration.
+Defined in `src/algorithm/constants.py`:
 
-## Current structure
+| Preset       | Ants | Iterations | α   | β   | ρ    | Use Case           |
+| ------------ | ---- | ---------- | --- | --- | ---- | ------------------ |
+| `QUICK_TEST` | 8    | 40         | 1.0 | 0.6 | 0.25 | Fast debugging     |
+| `FAST`       | 24   | 120        | 1.1 | 0.8 | 0.18 | Default run        |
+| `BALANCED`   | 32   | 180        | 1.2 | 0.7 | 0.14 | Deeper exploration |
+| `INTENSIVE`  | 48   | 800        | 1.4 | 0.6 | 0.60 | Long runs          |
 
-- `data/raw/`: OR-Library benchmark files (`binpack1.txt` … `binpack4.txt`).
-- `results/`: placeholder directories (ignored by Git) for any plots or CSVs you generate.
-- `quick_test.py`: simple entry-point that runs ACO (FAST preset) and compares with FFD.
-- `src/algorithm/aco.py`: core ACO implementation (pheromone loop, statistics).
-- `src/algorithm/components/`: helper classes (`ant.py`, `heuristic.py`, `pheromone.py`).
-- `src/algorithm/baseline.py`: greedy baselines (FFD, BFD, WFD).
-- `src/algorithm/constants.py`: parameter presets and pheromone bounds.
+## File Structure

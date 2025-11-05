@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from .components.ant import Ant
@@ -79,8 +79,8 @@ class ACO_BinPacking:
                 combined_metadata.update(logger_metadata)
             logger.update_metadata(**combined_metadata)
         
-        # Use original item order (let ACO learn naturally)
-        item_order = np.arange(n_items)
+        # Base item order (we'll shuffle per ant for diversification)
+        base_item_order = np.arange(n_items)
         
         # Initialize pheromone matrix
         # Max bins upper bound: number of items (worst case)
@@ -95,16 +95,20 @@ class ACO_BinPacking:
         
         # Main ACO loop
         for iteration in range(self.n_iterations):
-            # Create ants
-            ants = [Ant(items, capacity, self.alpha, self.beta) for _ in range(self.n_ants)]
+            # Create ants with a fixed beta
+            ants = []
+            for _ in range(self.n_ants):
+                ants.append(Ant(items, capacity, self.alpha, self.beta))
             
             # Each ant constructs a solution
             iteration_best_bins = float('inf')
             ant_solutions = []
             
             for ant in ants:
-                solution, n_bins = ant.construct_solution(pheromone, item_order)
-                ant_solutions.append((solution.copy(), n_bins))
+                shuffled_order = np.random.permutation(base_item_order)
+                solution, n_bins, decisions = ant.construct_solution(pheromone, shuffled_order)
+                
+                ant_solutions.append((solution.copy(), n_bins, decisions))
                 
                 # Track best in this iteration
                 if n_bins < iteration_best_bins:
@@ -118,17 +122,11 @@ class ACO_BinPacking:
             # Pheromone evaporation
             pheromone.evaporate(self.rho)
             
-            # Pheromone deposit (only best ant in iteration - as per problem spec)
-            best_solution_in_iter = None
-            best_n_bins_in_iter = float('inf')
-            for solution, n_bins in ant_solutions:
-                if n_bins < best_n_bins_in_iter:
-                    best_n_bins_in_iter = n_bins
-                    best_solution_in_iter = solution
-            
-            if best_solution_in_iter is not None:
-                quality = self.Q / best_n_bins_in_iter
-                pheromone.deposit(best_solution_in_iter, quality)
+            # Pheromone deposit (iteration-best only, as per problem spec)
+            best_entry = min(ant_solutions, key=lambda t: t[1])  # find iteration-best by n_bins
+            _, best_n_bins, decisions = best_entry
+            quality = self.Q / max(1, best_n_bins)
+            pheromone.deposit(decisions, quality)
             
             # Record convergence
             self.convergence_history.append(self.best_n_bins)
@@ -153,7 +151,7 @@ class ACO_BinPacking:
             if (iteration + 1) % 10 == 0:
                 print(f"Iteration {iteration + 1}/{self.n_iterations}: "
                       f"Best={self.best_n_bins}, Iter_best={iteration_best_bins}")
-        
+
         runtime = time.time() - start_time
         
         # Calculate unused capacity
@@ -177,6 +175,7 @@ class ACO_BinPacking:
             logger.flush()
         
         return results
+
     
     def _get_bin_loads(self, solution: np.ndarray, items: np.ndarray, capacity: int) -> List[int]:
         """Calculate load in each bin."""

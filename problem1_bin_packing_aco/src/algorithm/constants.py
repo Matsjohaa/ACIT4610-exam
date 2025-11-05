@@ -3,62 +3,72 @@
 
 # ============= Presets =============
 
-# Quick sanity check: few ants, cheap run, strong heuristic bias.
+# Quick smoke test: small colony, high evaporation, light heuristic weight.
 QUICK_TEST = {
-    'n_ants': 10,
-    'n_iterations': 50,
+    'n_ants': 8,
+    'n_iterations': 40,
     'alpha': 1.0,
-    'beta': 2.0,
-    'rho': 0.10,
+    'beta': 0.6,
+    'rho': 0.25,
     'Q': 1.0,
-    'use_ffd_order': True,
 }
 
-# Fast run: moderate ants, modest iterations, balanced pheromone/heuristic mix.
+# Default preset: moderate colony, balanced pheromone/heuristic mix.
 FAST = {
-    'n_ants': 20,
-    'n_iterations': 75,
-    'alpha': 1.2,
-    'beta': 1.8,
-    'rho': 0.12,
+    'n_ants': 24,
+    'n_iterations': 120,
+    'alpha': 1.1,
+    'beta': 0.8,
+    'rho': 0.18,
     'Q': 2.0,
-    'use_ffd_order': True,
 }
 
-# Balanced exploration: more ants and iterations, random item order to force learning.
+# Balanced exploration: larger colony with slower evaporation.
 BALANCED = {
-    'n_ants': 28,
-    'n_iterations': 140,
-    'alpha': 1.3,
-    'beta': 1.7,
-    'rho': 0.12,
-    'Q': 1.5,
-    'use_ffd_order': False,
+    'n_ants': 32,
+    'n_iterations': 180,
+    'alpha': 1.2,
+    'beta': 0.7,
+    'rho': 0.14,
+    'Q': 2.5,
 }
 
-# Intensive search: large colony, slow evaporation, pushes pheromone exploitation.
+# Intensive search: deep run with strong pheromone exploitation.
 INTENSIVE = {
-    'n_ants': 50,
-    'n_iterations': 250,
-    'alpha': 1.8,
-    'beta': 1.4,
-    'rho': 0.08,
-    'Q': 3.0,
-    'use_ffd_order': False,
+    'n_ants': 48,
+    'n_iterations': 800,
+    'alpha': 1.4,
+    'beta': 0.6,
+    'rho': 0.10,
+    'Q': 3.5,
 }
 
 
 # ============= Pheromone Settings =============
-# TAU_0: initial pheromone level for every (item, bin) edge. Higher values start with
+# TAU_0: initial pheromone level for every (item, fill-class) edge. Higher values start with
 #        stronger bias towards uniform exploration.
 # TAU_MIN / TAU_MAX: clipping bounds to prevent pheromone from vanishing or exploding,
 #        which keeps probabilities numerically stable and avoids stagnation.
-TAU_0 = 0.1
-TAU_MIN = 0.001
+TAU_0 = 0.2
+TAU_MIN = 0.01
 TAU_MAX = 2.0
+
+# Number of discrete fill classes to describe resulting bin fill levels
+# after placing an item. Higher granularity can capture more nuanced
+# preferences but may require more iterations to learn.
+FILL_CLASSES = 10
 
 
 # ============= Heuristic Settings =============
 # EPSILON: tiny constant to avoid division by zero in heuristics or probability scaling.
 EPSILON = 1e-6
+
+
+# Preset lookup helper for convenience in runners / scripts.
+PRESETS = {
+    'QUICK_TEST': QUICK_TEST,
+    'FAST': FAST,
+    'BALANCED': BALANCED,
+    'INTENSIVE': INTENSIVE,
+}
  
