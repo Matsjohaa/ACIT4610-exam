@@ -17,8 +17,7 @@ class ACO_BinPacking:
                  alpha: float = 1.0,
                  beta: float = 2.0,
                  rho: float = 0.1,
-                 Q: float = 1.0,
-                 use_ffd_order: bool = True):
+                 Q: float = 1.0):
         """
         Initialize ACO for bin packing.
         
@@ -29,7 +28,6 @@ class ACO_BinPacking:
             beta: Heuristic importance
             rho: Evaporation rate
             Q: Pheromone deposit factor
-            use_ffd_order: Use First-Fit Decreasing order for items
         """
         self.n_ants = n_ants
         self.n_iterations = n_iterations
@@ -37,7 +35,6 @@ class ACO_BinPacking:
         self.beta = beta
         self.rho = rho
         self.Q = Q
-        self.use_ffd_order = use_ffd_order
         
         # Statistics
         self.best_solution = None
@@ -77,17 +74,13 @@ class ACO_BinPacking:
                 'Q': self.Q,
                 'n_ants': self.n_ants,
                 'n_iterations': self.n_iterations,
-                'use_ffd_order': self.use_ffd_order,
             }
             if logger_metadata:
                 combined_metadata.update(logger_metadata)
             logger.update_metadata(**combined_metadata)
         
-        # Determine item order (FFD: decreasing size)
-        if self.use_ffd_order:
-            item_order = np.argsort(items)[::-1]  # Decreasing order
-        else:
-            item_order = np.arange(n_items)
+        # Use original item order (let ACO learn naturally)
+        item_order = np.arange(n_items)
         
         # Initialize pheromone matrix
         # Max bins upper bound: number of items (worst case)
@@ -125,10 +118,17 @@ class ACO_BinPacking:
             # Pheromone evaporation
             pheromone.evaporate(self.rho)
             
-            # Pheromone deposit (all ants weighted by quality)
+            # Pheromone deposit (only best ant in iteration - as per problem spec)
+            best_solution_in_iter = None
+            best_n_bins_in_iter = float('inf')
             for solution, n_bins in ant_solutions:
-                quality = self.Q / n_bins
-                pheromone.deposit(solution, quality)
+                if n_bins < best_n_bins_in_iter:
+                    best_n_bins_in_iter = n_bins
+                    best_solution_in_iter = solution
+            
+            if best_solution_in_iter is not None:
+                quality = self.Q / best_n_bins_in_iter
+                pheromone.deposit(best_solution_in_iter, quality)
             
             # Record convergence
             self.convergence_history.append(self.best_n_bins)
