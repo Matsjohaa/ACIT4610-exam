@@ -8,39 +8,39 @@ QUICK_TEST = {
     'n_ants': 8,
     'n_iterations': 40,
     'alpha': 1.0,
-    'beta': 0.6,
-    'rho': 0.25,
-    'Q': 1.0,
+    'beta': 2.0,  
+    'rho': 0.30,    
+    'Q': 10.0,      
 }
 
 # Default preset: moderate colony, balanced pheromone/heuristic mix.
 FAST = {
     'n_ants': 24,
     'n_iterations': 120,
-    'alpha': 1.1,
-    'beta': 0.8,
-    'rho': 0.18,
-    'Q': 2.0,
+    'alpha': 1.0,
+    'beta': 2.0,
+    'rho': 0.20,
+    'Q': 10.0,
 }
 
 # Balanced exploration: larger colony with slower evaporation.
 BALANCED = {
     'n_ants': 32,
-    'n_iterations': 180,
-    'alpha': 1.2,
-    'beta': 0.7,
-    'rho': 0.14,
-    'Q': 2.5,
+    'n_iterations': 200,
+    'alpha': 1.0,
+    'beta': 1.5,    
+    'rho': 0.15,
+    'Q': 10.0,
 }
 
 # Intensive search: deep run with strong pheromone exploitation.
 INTENSIVE = {
     'n_ants': 48,
-    'n_iterations': 800,
-    'alpha': 1.4,
-    'beta': 0.6,
-    'rho': 0.10,
-    'Q': 3.5,
+    'n_iterations': 500,   
+    'alpha': 1.0,
+    'beta': 1.0,    
+    'rho': 0.10,    
+    'Q': 10.0,
 }
 
 
