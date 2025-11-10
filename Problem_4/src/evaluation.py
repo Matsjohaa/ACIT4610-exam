@@ -1,4 +1,4 @@
-"""Evaluation entry point for Problem 4 NSA spam detector."""
+"""Evaluation entry point for A SINGLE RUN, validation phase will be useless here."""
 
 from __future__ import annotations
 

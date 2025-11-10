@@ -19,7 +19,7 @@ _PROBLEM_ROOT = _THIS_DIR.parent  # .../Problem_4
 DATA_PATH = _PROBLEM_ROOT / "data" / "sms_spam.tsv"
 
 TEST_RATIO: float = 0.2 
-VAL_RATIO: float = 0.1  #remainder after these two goes to training
+VAL_RATIO: float = 0.15  #remainder after these two goes to training
 
 # Vocabulary / text processing
 VOCAB_MIN_FREQ: int = 2
@@ -27,9 +27,9 @@ VOCAB_MAX_SIZE: int = 4000
 
 # NSA (Negative Selection Algorithm) hyperparameters
 NSA_NUM_DETECTORS: int = 1000  # increase detector pool for broader spam coverage
-NSA_DETECTOR_SIZE: int = 4
-NSA_OVERLAP_THRESHOLD: int = 1  # lower threshold to allow weaker overlaps, boosting recall
-NSA_MAX_ATTEMPTS: int = 60_000  # allow more attempts to find non-self detectors
+NSA_DETECTOR_SIZE: int = 3
+NSA_OVERLAP_THRESHOLD: int = 2  # lower threshold to allow weaker overlaps, boosting recall
+NSA_MAX_ATTEMPTS: int = 130_000  # allow more attempts to find non-self detectors
 
 # Future configurable options (placeholders for extensions)
 # Require at least this many detectors to fire to call spam (currently unused)

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-NSA Parameter Analysis Script
+OLD SCRIPT for NSA Parameter Analysis Script
 Run the complete NSA spam detection analysis with parameter optimization.
+Optimzses for f1-only, use other analysis files to compare multiple strategies.
 """
 
 import sys
@@ -288,12 +289,12 @@ def main():
     print(f"Spam ratio: {labels.count(1) / len(labels):.3f}")
     
     # Split data
-    set_seed(42)
+    set_seed(constants.SEED)
     train_texts, train_labels, val_texts, val_labels, test_texts, test_labels = train_val_test_split(
         texts, labels, 
         test_ratio=constants.TEST_RATIO, 
         val_ratio=constants.VAL_RATIO,
-        seed=42
+        seed=constants.SEED
     )
     
     print(f"\nDataset splits:")
@@ -328,7 +329,7 @@ def main():
         overlap_threshold=constants.NSA_OVERLAP_THRESHOLD,
         max_attempts=constants.NSA_MAX_ATTEMPTS,
         min_activations=constants.NSA_MIN_ACTIVATIONS,
-        seed=42
+        seed=constants.SEED
     )
     
     baseline_nsa.fit(train_sets, train_labels)
@@ -360,10 +361,10 @@ def main():
     print("\n3. Running parameter grid search...")
     
     param_grid = {
-        'num_detectors': [500, 1000, 2000],
-        'detector_size': [3, 4, 5],
-        'overlap_threshold': [1, 2, 3],
-        'min_activations': [1, 2]
+        'num_detectors': [100, 300, 500, 700, 1000],  # More granular testing around achievable detector counts
+        'detector_size': [2, 3, 4, 5],        # Test all sizes including 2 and 5
+        'overlap_threshold': [1, 2, 3, 4],    # Include 1 for better spam detection
+        'min_activations': [1, 2, 3]          # Added 3 to test more conservative classification
     }
     
     print("Parameter grid:")
@@ -391,7 +392,7 @@ def main():
             overlap_threshold=param_dict['overlap_threshold'],
             min_activations=param_dict['min_activations'],
             max_attempts=constants.NSA_MAX_ATTEMPTS,
-            seed=42
+            seed=constants.SEED
         )
         
         nsa.fit(train_sets, train_labels)
@@ -424,14 +425,20 @@ def main():
     
     # 4. Best Model Evaluation
     results_df = pd.DataFrame(results)
-    best_params = results_df.loc[results_df['val_f1'].idxmax()]
+    
+    # Create weighted score: prioritize precision, but consider recall
+    # Weight precision 3x more than recall
+    results_df['weighted_score'] = 0.75 * results_df['val_precision'] + 0.25 * results_df['val_recall']
+    best_params = results_df.loc[results_df['weighted_score'].idxmax()]  # Optimize for precision-weighted score
     
     print(f"\n4. Best parameters found:")
     print(f"num_detectors: {best_params['num_detectors']:.0f}")
     print(f"detector_size: {best_params['detector_size']:.0f}")
     print(f"overlap_threshold: {best_params['overlap_threshold']:.0f}")
     print(f"min_activations: {best_params['min_activations']:.0f}")
-    print(f"Validation F1: {best_params['val_f1']:.4f}")
+    print(f"Validation Precision: {best_params['val_precision']:.4f}")
+    print(f"Validation Recall: {best_params['val_recall']:.4f}")
+    print(f"Weighted Score (0.75*Precision + 0.25*Recall): {best_params['weighted_score']:.4f}")
     
     # Train best model
     best_nsa = NegativeSelectionClassifier(
@@ -441,7 +448,7 @@ def main():
         overlap_threshold=int(best_params['overlap_threshold']),
         min_activations=int(best_params['min_activations']),
         max_attempts=constants.NSA_MAX_ATTEMPTS,
-        seed=42
+        seed=constants.SEED
     )
     
     best_nsa.fit(train_sets, train_labels)
@@ -481,7 +488,7 @@ def main():
             overlap_threshold=int(best_params['overlap_threshold']),
             min_activations=int(best_params['min_activations']),
             max_attempts=constants.NSA_MAX_ATTEMPTS,
-            seed=42
+            seed=constants.SEED
         )
         
         nsa.fit(train_sets, train_labels)

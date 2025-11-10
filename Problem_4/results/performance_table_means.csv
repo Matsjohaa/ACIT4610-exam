@@ -1,0 +1,8 @@
+Strategy,Precision,Recall,F1-Score,ROC-AUC,PR-AUC,Accuracy,False Positives,False Negatives
+F1-Optimized,0.897,0.795,0.841,0.921,0.850,0.963,13,28
+Precision-Optimized,0.967,0.579,0.717,0.878,0.770,0.946,3,58
+Recall-Optimized,0.815,0.875,0.844,0.936,0.877,0.960,27,17
+Precision-Weighted,0.935,0.745,0.827,0.924,0.853,0.962,8,35
+Recall-Weighted,0.823,0.864,0.843,0.936,0.877,0.960,26,19
+Balanced-Weighted,0.900,0.799,0.845,0.927,0.858,0.964,13,28
+Conservative,0.913,0.754,0.825,0.908,0.825,0.961,10,34

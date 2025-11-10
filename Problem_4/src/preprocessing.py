@@ -72,18 +72,24 @@ def train_val_test_split(
 ):
 	"""Split into train/validation/test.
 
-	val_ratio is applied to the remaining portion after test split.
-	Example: test_ratio=0.2, val_ratio=0.1 => 20% test, 10% of remaining 80% (=8%) validation, 72% train.
+	All ratios are applied to the total dataset size.
+	Example: test_ratio=0.2, val_ratio=0.15 => 20% test, 15% validation, 65% train.
 	"""
 	import random
 	idx = list(range(len(texts)))
 	random.Random(seed).shuffle(idx)
-	test_cut = int(len(idx) * (1 - test_ratio))
-	train_val_idx, test_idx = idx[:test_cut], idx[test_cut:]
-	# Validation from train_val pool
-	val_count = int(len(train_val_idx) * val_ratio)
-	val_idx = train_val_idx[:val_count]
-	train_idx = train_val_idx[val_count:]
+	
+	# Calculate splits based on total dataset size
+	total_size = len(idx)
+	test_size = int(total_size * test_ratio)
+	val_size = int(total_size * val_ratio)
+	train_size = total_size - test_size - val_size
+	
+	# Split indices
+	test_idx = idx[:test_size]
+	val_idx = idx[test_size:test_size + val_size]
+	train_idx = idx[test_size + val_size:]
+	
 	X_train = [texts[i] for i in train_idx]
 	y_train = [labels[i] for i in train_idx]
 	X_val = [texts[i] for i in val_idx]
