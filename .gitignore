@@ -30,3 +30,5 @@ outputs/
 checkpoints/
 models/
 data/
+RL/src/Results/*
+!RL/src/Results/.gitkeep
