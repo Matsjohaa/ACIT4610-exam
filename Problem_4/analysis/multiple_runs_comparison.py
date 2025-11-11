@@ -1,246 +1,369 @@
 #!/usr/bin/env python3
 """
-Multiple runs optimization comparison for NSA spam detection.
-Runs the optimization comparison multiple times to calculate average performance and confidence intervals.
-Will take about 2 hours to run on a standard laptop.
+Multiple runs optimization comparison for Vocabulary NSA spam detection with 7 strategies.
+Runs the optimization comparison 5 times to calculate average performance and confidence intervals.
+Ge    # Get activation scores for each sample (count how many detectors match)
+    # Use NSA's own tokenizer to ensure consistency
+    test_scores = []
+    for text in test_texts:
+        tokens = nsa._text_to_tokens(text)  # Use NSA's tokenizer
+        activations = 0
+        
+        if len(tokens) >= nsa.detector_size:
+            for i in range(len(tokens) - nsa.detector_size + 1):
+                pattern = tuple(tokens[i:i + nsa.detector_size])
+                for detector in nsa.detectors:
+                    if nsa._matches_pattern(detector, pattern):
+                        activations += 1
+        
+        test_scores.append(activations)
+    test_scores = np.array(test_scores)
+    
+    # Debug: Print score statistics
+    spam_scores = test_scores[np.array(test_labels) == 1]
+    ham_scores = test_scores[np.array(test_labels) == 0]
+    print(f"    Activation scores - Spam: {spam_scores.mean():.2f} ± {spam_scores.std():.2f}, Ham: {ham_scores.mean():.2f} ± {ham_scores.std():.2f}")nsive plots and tables including Pareto front, ROC/PR curves, and detector statistics.
 """
 
 import numpy as np
 import pandas as pd
 import json
 import matplotlib.pyplot as plt
+import seaborn as sns
 from pathlib import Path
 import sys
 from typing import Dict, List, Tuple
-from sklearn.metrics import roc_curve, precision_recall_curve, auc
-from collections import defaultdict
+from sklearn.metrics import roc_curve, precision_recall_curve, auc, roc_auc_score
+from collections import defaultdict, Counter
+import warnings
+warnings.filterwarnings('ignore')
 
-# Add the src directory to the path so we can import modules
-sys.path.append(str(Path(__file__).parent.parent / 'src'))
+# Add the src directory to path
+script_dir = Path(__file__).resolve().parent
+src_dir = script_dir.parent / 'src'
+sys.path.insert(0, str(src_dir))
 
+# Import our modules
+from preprocessing import load_data, train_val_test_split
+from nsa_optimized import NegativeSelectionClassifier
 import constants
-from preprocessing import load_data, train_val_test_split, build_vocabulary, texts_to_sets
-from nsa import NegativeSelectionClassifier
-from utils import set_seed, classification_report
-from sklearn.metrics import roc_auc_score, average_precision_score
-import itertools
 
-def run_parameter_grid_search(train_sets, train_labels, val_sets, val_labels, vocab_size, run_id):
-    """Run comprehensive parameter grid search for one run"""
-    print(f"  Run {run_id}: Running parameter grid search...")
+
+def run_parameter_grid_search_single_run(train_texts, train_labels, val_texts, val_labels, run_id):
+    """Run parameter grid search for both r-contiguous and Hamming NSA for one run."""
+    print(f"  Run {run_id}: Running grid search...")
     
-    param_grid = {
-        'num_detectors': [100, 300, 500, 700, 1000, 1500, 2000, 3000],
-        'detector_size': [2, 3, 4, 5],
-        'overlap_threshold': [1, 2, 3, 4],
-        'min_activations': [1, 2, 3]
+    # Balanced parameter grids (medium speed, some variety)
+    import itertools
+    param_grids = {
+        "r_contiguous": {
+            'r_contiguous': [3],
+            'detector_size': [4],
+            'num_detectors': [700, 900],  # 2 options
+            'vocab_size': [1200],
+            'min_word_freq': [3],
+            'max_ham_match_ratio': [0.05],
+            'min_activations': [1],
+            'matching_rule': ['r_contiguous']
+        },
+        "hamming": {
+            'hamming_threshold': [1],
+            'detector_size': [5],
+            'num_detectors': [3500, 4000],  # 2 options
+            'vocab_size': [700],
+            'min_word_freq': [3],
+            'max_ham_match_ratio': [0.05],
+            'min_activations': [1],
+            'matching_rule': ['hamming']
+        }
     }
-    
-    param_combinations = list(itertools.product(*param_grid.values()))
-    param_names = list(param_grid.keys())
-    total_combinations = len(param_combinations)
     
     results = []
     
-    for i, param_values in enumerate(param_combinations):
-        if i % 50 == 0:
-            print(f"    Progress: {i+1}/{total_combinations} experiments...")
+    for rule_name, param_grid in param_grids.items():
+        param_combinations = list(itertools.product(*param_grid.values()))
+        param_names = list(param_grid.keys())
         
-        param_dict = dict(zip(param_names, param_values))
-        
-        # Train NSA with current parameters
-        nsa = NegativeSelectionClassifier(
-            vocab_size=vocab_size,
-            num_detectors=param_dict['num_detectors'],
-            detector_size=param_dict['detector_size'],
-            overlap_threshold=param_dict['overlap_threshold'],
-            min_activations=param_dict['min_activations'],
-            max_attempts=constants.NSA_MAX_ATTEMPTS,
-            seed=None  # Keep randomness for multiple runs
-        )
-        
-        nsa.fit(train_sets, train_labels)
-        val_pred, val_scores = nsa.predict_with_scores(val_sets)
-        val_metrics = classification_report(val_labels, val_pred)
-        
-        # Store results
-        result = {
-            **param_dict,
-            'detectors_generated': nsa.detectors_count,
-            'attempts_used': nsa.attempts_used,
-            'val_accuracy': val_metrics['accuracy'],
-            'val_precision': val_metrics['precision'],
-            'val_recall': val_metrics['recall'],
-            'val_f1': val_metrics['f1'],
-            'val_roc_auc': roc_auc_score(val_labels, val_scores),
-            'val_pr_auc': average_precision_score(val_labels, val_scores),
-        }
-        
-        # Calculate weighted scores
-        result['precision_weighted'] = 0.75 * result['val_precision'] + 0.25 * result['val_recall']
-        result['recall_weighted'] = 0.25 * result['val_precision'] + 0.75 * result['val_recall']
-        result['balanced_weighted'] = 0.50 * result['val_precision'] + 0.50 * result['val_recall']
-        result['precision_optimized_weighted'] = 0.99 * result['val_precision'] + 0.01 * result['val_recall']
-        
-        results.append(result)
+        for params in param_combinations:
+            param_dict = dict(zip(param_names, params))
+            
+            try:
+                nsa = NegativeSelectionClassifier(
+                    representation="vocabulary",
+                    max_attempts=5000,
+                    **param_dict
+                )
+                
+                nsa.fit(train_texts, train_labels)
+                
+                if len(nsa.detectors) == 0:
+                    continue
+                
+                val_pred = nsa.predict(val_texts)
+                
+                # Calculate metrics
+                tp = sum(1 for p, t in zip(val_pred, val_labels) if p == 1 and t == 1)
+                fp = sum(1 for p, t in zip(val_pred, val_labels) if p == 1 and t == 0)
+                fn = sum(1 for p, t in zip(val_pred, val_labels) if p == 0 and t == 1)
+                tn = sum(1 for p, t in zip(val_pred, val_labels) if p == 0 and t == 0)
+                
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+                accuracy = (tp + tn) / len(val_labels)
+                
+                # Store results
+                result = {
+                    **param_dict,
+                    'detectors_generated': len(nsa.detectors),
+                    'val_accuracy': accuracy,
+                    'val_precision': precision,
+                    'val_recall': recall,
+                    'val_f1': f1,
+                }
+                results.append(result)
+            
+            except Exception as e:
+                continue
     
     return pd.DataFrame(results)
 
-def find_optimal_parameters_single_run(results_df):
-    """Find optimal parameters using different strategies for a single run"""
+
+def find_optimal_parameters_seven_strategies(results_df):
+    """Find optimal parameters for all seven strategies."""
+    if len(results_df) == 0:
+        return {}
+    
     strategies = {}
     
-    # Strategy 1: F1-Score Optimization
-    f1_best = results_df.loc[results_df['val_f1'].idxmax()]
-    strategies['F1-Optimized'] = {'params': f1_best}
+    # 1. F1-Optimized
+    best_f1 = results_df.loc[results_df['val_f1'].idxmax()]
+    strategies['F1-Optimized'] = {
+        'params': best_f1.to_dict(),
+        'metric_focus': 'F1 Score',
+        'weights': 'N/A (harmonic mean)'
+    }
     
-    # Strategy 2: Precision Optimization (99% precision, 1% recall)
-    precision_best = results_df.loc[results_df['precision_optimized_weighted'].idxmax()]
-    strategies['Precision-Optimized'] = {'params': precision_best}
+    # 2. Precision-Optimized (99% P, 1% R)
+    results_df['precision_score'] = results_df['val_precision'] * 0.99 + results_df['val_recall'] * 0.01
+    best_precision = results_df.loc[results_df['precision_score'].idxmax()]
+    strategies['Precision-Optimized'] = {
+        'params': best_precision.to_dict(),
+        'metric_focus': 'Precision',
+        'weights': 'P=99%, R=1%'
+    }
     
-    # Strategy 3: Recall Optimization
-    recall_best = results_df.loc[results_df['val_recall'].idxmax()]
-    strategies['Recall-Optimized'] = {'params': recall_best}
+    # 3. Recall-Optimized (99% R, 1% P)
+    results_df['recall_score'] = results_df['val_recall'] * 0.99 + results_df['val_precision'] * 0.01
+    best_recall = results_df.loc[results_df['recall_score'].idxmax()]
+    strategies['Recall-Optimized'] = {
+        'params': best_recall.to_dict(),
+        'metric_focus': 'Recall',
+        'weights': 'R=99%, P=1%'
+    }
     
-    # Strategy 4: Precision-Weighted (75% precision, 25% recall)
-    weighted_best = results_df.loc[results_df['precision_weighted'].idxmax()]
-    strategies['Precision-Weighted'] = {'params': weighted_best}
+    # 4. Precision-Weighted (75% P, 25% R)
+    results_df['precision_weighted_score'] = results_df['val_precision'] * 0.75 + results_df['val_recall'] * 0.25
+    best_precision_weighted = results_df.loc[results_df['precision_weighted_score'].idxmax()]
+    strategies['Precision-Weighted'] = {
+        'params': best_precision_weighted.to_dict(),
+        'metric_focus': 'Precision-biased',
+        'weights': 'P=75%, R=25%'
+    }
     
-    # Strategy 5: Recall-Weighted (25% precision, 75% recall)
-    recall_weighted_best = results_df.loc[results_df['recall_weighted'].idxmax()]
-    strategies['Recall-Weighted'] = {'params': recall_weighted_best}
+    # 5. Recall-Weighted (25% P, 75% R)
+    results_df['recall_weighted_score'] = results_df['val_precision'] * 0.25 + results_df['val_recall'] * 0.75
+    best_recall_weighted = results_df.loc[results_df['recall_weighted_score'].idxmax()]
+    strategies['Recall-Weighted'] = {
+        'params': best_recall_weighted.to_dict(),
+        'metric_focus': 'Recall-biased',
+        'weights': 'P=25%, R=75%'
+    }
     
-    # Strategy 6: Balanced (50% precision, 50% recall)
-    balanced_best = results_df.loc[results_df['balanced_weighted'].idxmax()]
-    strategies['Balanced-Weighted'] = {'params': balanced_best}
+    # 6. Balance-Weighted (50% P, 50% R)
+    results_df['balanced_weighted_score'] = results_df['val_precision'] * 0.50 + results_df['val_recall'] * 0.50
+    best_balanced = results_df.loc[results_df['balanced_weighted_score'].idxmax()]
+    strategies['Balance-Weighted'] = {
+        'params': best_balanced.to_dict(),
+        'metric_focus': 'Balanced',
+        'weights': 'P=50%, R=50%'
+    }
     
-    # Strategy 7: Conservative (High precision threshold)
-    high_precision = results_df[results_df['val_precision'] >= 0.93]
-    if not high_precision.empty:
-        conservative_best = high_precision.loc[high_precision['val_f1'].idxmax()]
-        strategies['Conservative'] = {'params': conservative_best}
+    # 7. Conservative (Recall ≥ 0.90, then max F1)
+    conservative_candidates = results_df[results_df['val_recall'] >= 0.90]
+    if len(conservative_candidates) > 0:
+        best_conservative = conservative_candidates.loc[conservative_candidates['val_f1'].idxmax()]
+        strategies['Conservative'] = {
+            'params': best_conservative.to_dict(),
+            'metric_focus': 'High recall with best F1',
+            'weights': 'Filter: R≥90%, then max F1'
+        }
+    else:
+        best_conservative = results_df.loc[results_df['val_recall'].idxmax()]
+        strategies['Conservative'] = {
+            'params': best_conservative.to_dict(),
+            'metric_focus': 'Highest available recall',
+            'weights': f'Max recall: {best_conservative["val_recall"]:.2%}'
+        }
     
     return strategies
 
-def evaluate_strategy_on_test_single_run(strategy_params, train_sets, train_labels, test_sets, test_labels, vocab_size):
-    """Evaluate a strategy on test set for a single run"""
+
+def evaluate_strategy_with_scores(params, train_texts, train_labels, test_texts, test_labels):
+    """Evaluate a strategy on test set and return detailed metrics including scores for ROC/PR curves."""
     nsa = NegativeSelectionClassifier(
-        vocab_size=vocab_size,
-        num_detectors=int(strategy_params['num_detectors']),
-        detector_size=int(strategy_params['detector_size']),
-        overlap_threshold=int(strategy_params['overlap_threshold']),
-        min_activations=int(strategy_params['min_activations']),
-        max_attempts=constants.NSA_MAX_ATTEMPTS,
-        seed=None  # Keep randomness
+        representation="vocabulary",
+        num_detectors=int(params['num_detectors']),
+        detector_size=int(params['detector_size']),
+        matching_rule=params['matching_rule'],
+        max_attempts=5000
     )
     
-    nsa.fit(train_sets, train_labels)
-    test_pred, test_scores = nsa.predict_with_scores(test_sets)
-    test_metrics = classification_report(test_labels, test_pred)
+    # Set rule-specific parameters
+    if params['matching_rule'] == 'r_contiguous':
+        nsa.r_contiguous = int(params['r_contiguous'])
+        nsa.min_activations = int(params.get('min_activations', 1))
+    else:
+        nsa.hamming_threshold = int(params['hamming_threshold'])
+        nsa.min_activations = int(params.get('min_activations', 1))
     
-    # Calculate confusion matrix components
-    true_positives = sum(1 for true_label, pred_label in zip(test_labels, test_pred) 
-                        if true_label == 1 and pred_label == 1)
-    true_negatives = sum(1 for true_label, pred_label in zip(test_labels, test_pred) 
-                        if true_label == 0 and pred_label == 0)
-    false_positives = sum(1 for true_label, pred_label in zip(test_labels, test_pred) 
-                         if true_label == 0 and pred_label == 1)
-    false_negatives = sum(1 for true_label, pred_label in zip(test_labels, test_pred) 
-                         if true_label == 1 and pred_label == 0)
+    # Set additional parameters
+    nsa.vocab_size = int(params.get('vocab_size', 1000))
+    nsa.min_word_freq = int(params.get('min_word_freq', 3))
+    nsa.max_ham_match_ratio = float(params.get('max_ham_match_ratio', 0.05))
     
-    # Calculate ROC and PR curves
-    fpr, tpr, _ = roc_curve(test_labels, test_scores)
-    precision_curve, recall_curve, _ = precision_recall_curve(test_labels, test_scores)
+    # Train
+    nsa.fit(train_texts, train_labels)
+    
+    # Predict with scores
+    test_pred = nsa.predict(test_texts)
+    
+    # Get activation scores for each sample (count how many detectors match)
+    # Use NSA's own tokenizer to ensure consistency
+    test_scores = []
+    for text in test_texts:
+        tokens = nsa._text_to_tokens(text)  # Use NSA's tokenizer
+        activations = 0
+        
+        if len(tokens) >= nsa.detector_size:
+            for i in range(len(tokens) - nsa.detector_size + 1):
+                pattern = tuple(tokens[i:i + nsa.detector_size])
+                for detector in nsa.detectors:
+                    if nsa._matches_pattern(detector, pattern):
+                        activations += 1
+        
+        test_scores.append(activations)
+    test_scores = np.array(test_scores)
+    
+    # Calculate all metrics
+    tp = sum(1 for p, t in zip(test_pred, test_labels) if p == 1 and t == 1)
+    fp = sum(1 for p, t in zip(test_pred, test_labels) if p == 1 and t == 0)
+    fn = sum(1 for p, t in zip(test_pred, test_labels) if p == 0 and t == 1)
+    tn = sum(1 for p, t in zip(test_pred, test_labels) if p == 0 and t == 0)
+    
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    accuracy = (tp + tn) / len(test_labels)
+    
+    # Calculate ROC-AUC and PR-AUC
+    try:
+        roc_auc = roc_auc_score(test_labels, test_scores)
+        fpr, tpr, _ = roc_curve(test_labels, test_scores)
+        precision_curve, recall_curve, _ = precision_recall_curve(test_labels, test_scores)
+        pr_auc = auc(recall_curve, precision_curve)
+    except Exception as e:
+        print(f"    Warning: ROC/PR calculation failed: {e}")
+        roc_auc = 0.5
+        pr_auc = precision
+        fpr, tpr = np.array([0, 1]), np.array([0, 1])
+        precision_curve, recall_curve = np.array([1, 0]), np.array([0, 1])
+    
+    # Calculate detector statistics manually
+    ham_matches_list = []
+    spam_matches_list = []
+    
+    for text, label in zip(train_texts, train_labels):
+        tokens = nsa._text_to_tokens(text)  # Use NSA's tokenizer
+        matches = 0
+        
+        if len(tokens) >= nsa.detector_size:
+            for i in range(len(tokens) - nsa.detector_size + 1):
+                pattern = tuple(tokens[i:i + nsa.detector_size])
+                for detector in nsa.detectors:
+                    if nsa._matches_pattern(detector, pattern):
+                        matches += 1
+                        break  # Count only once per position
+        
+        if label == 0:  # ham
+            ham_matches_list.append(matches)
+        else:  # spam
+            spam_matches_list.append(matches)
+    
+    ham_matches = np.mean(ham_matches_list) if ham_matches_list else 0
+    spam_matches = np.mean(spam_matches_list) if spam_matches_list else 0
     
     return {
-        'test_accuracy': test_metrics['accuracy'],
-        'test_precision': test_metrics['precision'],
-        'test_recall': test_metrics['recall'],
-        'test_f1': test_metrics['f1'],
-        'test_roc_auc': roc_auc_score(test_labels, test_scores),
-        'test_pr_auc': average_precision_score(test_labels, test_scores),
-        'false_positives': false_positives,
-        'false_negatives': false_negatives,
-        'true_positives': true_positives,
-        'true_negatives': true_negatives,
-        'total_errors': false_positives + false_negatives,
-        'detectors_generated': nsa.detectors_count,
-        'detector_size': int(strategy_params['detector_size']),
-        'overlap_threshold': int(strategy_params['overlap_threshold']),
-        'min_activations': int(strategy_params['min_activations']),
-        # Store curve data for averaging
+        'test_accuracy': accuracy,
+        'test_precision': precision,
+        'test_recall': recall,
+        'test_f1': f1,
+        'test_roc_auc': roc_auc,
+        'test_pr_auc': pr_auc,
+        'false_positives': fp,
+        'false_negatives': fn,
+        'true_positives': tp,
+        'true_negatives': tn,
+        'total_errors': fp + fn,
+        'detectors_generated': len(nsa.detectors),
+        'detector_size': int(params['detector_size']),
+        'num_detectors_target': int(params['num_detectors']),
+        'matching_rule': params['matching_rule'],
+        'rule_parameter': int(params.get('r_contiguous', params.get('hamming_threshold', 0))) if not pd.isna(params.get('r_contiguous', params.get('hamming_threshold', 0))) else 0,
+        'min_activations': int(params.get('min_activations', 1)),
+        'vocab_size': int(params.get('vocab_size', 1000)),
+        'ham_matches_avg': ham_matches,
+        'spam_matches_avg': spam_matches,
+        'discrimination_rate': spam_matches / ham_matches if ham_matches > 0 else 0,
+        # ROC/PR curve data
         'roc_fpr': fpr,
         'roc_tpr': tpr,
-        'pr_precision': precision_curve,
         'pr_recall': recall_curve,
-        'test_labels': test_labels,
-        'test_scores': test_scores
+        'pr_precision': precision_curve,
     }
 
-def generate_detector_coverage_single_run(train_sets, train_labels, test_sets, test_labels, vocab_size, strategy_params, run_id):
-    """Generate detector coverage curve for a single strategy and run"""
-    detector_counts = [50, 100, 200, 300, 500, 700, 1000, 1500, 2000, 3000]
-    coverage_results = []
-    
-    base_params = {
-        'detector_size': int(strategy_params['detector_size']),
-        'overlap_threshold': int(strategy_params['overlap_threshold']),
-        'min_activations': int(strategy_params['min_activations'])
-    }
-    
-    for num_det in detector_counts:
-        nsa = NegativeSelectionClassifier(
-            vocab_size=vocab_size,
-            num_detectors=num_det,
-            detector_size=base_params['detector_size'],
-            overlap_threshold=base_params['overlap_threshold'],
-            min_activations=base_params['min_activations'],
-            max_attempts=constants.NSA_MAX_ATTEMPTS,
-            seed=None
-        )
-        
-        nsa.fit(train_sets, train_labels)
-        test_pred, test_scores = nsa.predict_with_scores(test_sets)
-        test_metrics = classification_report(test_labels, test_pred)
-        
-        coverage_results.append({
-            'num_detectors': num_det,
-            'detectors_generated': nsa.detectors_count,
-            'recall': test_metrics['recall'],
-            'precision': test_metrics['precision'],
-            'f1': test_metrics['f1']
-        })
-    
-    return coverage_results
 
-def run_single_comparison(train_sets, train_labels, val_sets, val_labels, test_sets, test_labels, vocab_size, run_id):
-    """Run a single complete optimization comparison"""
-    print(f"Run {run_id}/10:")
+def run_single_comparison(train_texts, train_labels, val_texts, val_labels, test_texts, test_labels, run_id):
+    """Run a single complete optimization comparison."""
+    print(f"\nRun {run_id}/3:")
     
-    # Run parameter grid search
-    results_df = run_parameter_grid_search(train_sets, train_labels, val_sets, val_labels, vocab_size, run_id)
+    # Run grid search
+    results_df = run_parameter_grid_search_single_run(train_texts, train_labels, val_texts, val_labels, run_id)
     
-    # Find optimal parameters for each strategy
-    strategies = find_optimal_parameters_single_run(results_df)
+    # Find optimal parameters for all 7 strategies
+    strategies = find_optimal_parameters_seven_strategies(results_df)
     
     # Evaluate each strategy on test set
-    print(f"  Run {run_id}: Evaluating strategies on test set...")
+    print(f"  Run {run_id}: Evaluating {len(strategies)} strategies on test set...")
     strategy_results = {}
     
     for strategy_name, strategy_info in strategies.items():
-        test_results = evaluate_strategy_on_test_single_run(
-            strategy_info['params'], train_sets, train_labels, test_sets, test_labels, vocab_size
+        test_results = evaluate_strategy_with_scores(
+            strategy_info['params'], 
+            train_texts, train_labels, 
+            test_texts, test_labels
         )
         strategy_results[strategy_name] = test_results
     
     return strategy_results
 
+
 def calculate_statistics(all_runs_results):
-    """Calculate mean, std, and 95% confidence intervals for all metrics"""
+    """Calculate mean, std, and 95% CI for all metrics across runs."""
     strategy_names = list(all_runs_results[0].keys())
     
-    # Only include scalar metrics in statistics calculation
-    excluded_metrics = {'roc_fpr', 'roc_tpr', 'pr_precision', 'pr_recall', 'test_labels', 'test_scores'}
+    # Exclude non-scalar metrics
+    excluded_metrics = {'roc_fpr', 'roc_tpr', 'pr_precision', 'pr_recall'}
     all_metrics = list(all_runs_results[0][strategy_names[0]].keys())
     scalar_metrics = [m for m in all_metrics if m not in excluded_metrics]
     
@@ -252,33 +375,35 @@ def calculate_statistics(all_runs_results):
         for metric in scalar_metrics:
             values = [run[strategy][metric] for run in all_runs_results if strategy in run]
             
-            if len(values) > 0:
+            if len(values) > 0 and isinstance(values[0], (int, float, np.number)):
                 mean_val = np.mean(values)
                 std_val = np.std(values, ddof=1) if len(values) > 1 else 0
                 sem_val = std_val / np.sqrt(len(values)) if len(values) > 1 else 0
-                ci_95 = 1.96 * sem_val  # 95% confidence interval
+                ci_95 = 1.96 * sem_val
                 
                 statistics[strategy][metric] = {
-                    'mean': mean_val,
-                    'std': std_val,
-                    'sem': sem_val,
-                    'ci_95': ci_95,
-                    'min': np.min(values),
-                    'max': np.max(values),
+                    'mean': float(mean_val),
+                    'std': float(std_val),
+                    'sem': float(sem_val),
+                    'ci_95': float(ci_95),
+                    'min': float(np.min(values)),
+                    'max': float(np.max(values)),
                     'n_runs': len(values)
+                }
+            else:
+                # For non-numeric values, store the most common
+                statistics[strategy][metric] = {
+                    'mean': values[0] if values else None,
+                    'mode': Counter(values).most_common(1)[0][0] if values else None
                 }
     
     return statistics
 
-def interpolate_curve(x_vals, y_vals, common_x):
-    """Interpolate curve to common x values for averaging"""
-    return np.interp(common_x, x_vals, y_vals)
 
 def average_curves(all_runs_results):
-    """Calculate average ROC and PR curves across runs"""
+    """Calculate average ROC and PR curves across runs."""
     strategy_curves = defaultdict(lambda: {'roc_fpr': [], 'roc_tpr': [], 'pr_recall': [], 'pr_precision': []})
     
-    # Collect all curves
     for run in all_runs_results:
         for strategy_name, results in run.items():
             if 'roc_fpr' in results:
@@ -287,27 +412,24 @@ def average_curves(all_runs_results):
                 strategy_curves[strategy_name]['pr_recall'].append(results['pr_recall'])
                 strategy_curves[strategy_name]['pr_precision'].append(results['pr_precision'])
     
-    # Calculate averages
     averaged_curves = {}
     for strategy_name, curves in strategy_curves.items():
         if curves['roc_fpr']:
-            # Common x values for interpolation
             common_fpr = np.linspace(0, 1, 100)
             common_recall = np.linspace(0, 1, 100)
             
-            # Interpolate and average ROC curves
+            # Average ROC curves
             roc_tprs = []
             for fpr, tpr in zip(curves['roc_fpr'], curves['roc_tpr']):
-                roc_tprs.append(interpolate_curve(fpr, tpr, common_fpr))
+                roc_tprs.append(np.interp(common_fpr, fpr, tpr))
             avg_roc_tpr = np.mean(roc_tprs, axis=0)
             
-            # Interpolate and average PR curves (reverse order for recall)
+            # Average PR curves
             pr_precisions = []
             for recall, precision in zip(curves['pr_recall'], curves['pr_precision']):
-                # Reverse for interpolation (recall should be increasing)
                 recall_rev = recall[::-1]
                 precision_rev = precision[::-1]
-                pr_precisions.append(interpolate_curve(recall_rev, precision_rev, common_recall))
+                pr_precisions.append(np.interp(common_recall, recall_rev, precision_rev))
             avg_pr_precision = np.mean(pr_precisions, axis=0)
             
             averaged_curves[strategy_name] = {
@@ -319,446 +441,397 @@ def average_curves(all_runs_results):
     
     return averaged_curves
 
-def generate_averaged_plots(statistics, averaged_curves, output_dir):
-    """Generate averaged plots from multiple runs"""
-    print("  Generating averaged plots...")
+
+def generate_pareto_front_with_f1_contours(statistics, output_dir):
+    """Generate Pareto front plot with F1 contours."""
+    print("  Generating Pareto front with F1 contours...")
     
-    # Set style
-    plt.style.use('default')
-    colors = plt.cm.Set1(np.linspace(0, 1, 7))
-    
-    # Create main comparison figure
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, ax = plt.subplots(figsize=(12, 10))
     
     strategy_names = list(statistics.keys())
+    colors = plt.cm.Set1(np.linspace(0, 1, len(strategy_names)))
     
-    # 1. ROC Curves
+    # Plot each strategy
+    recalls = []
+    precisions = []
+    for i, strategy in enumerate(strategy_names):
+        if 'test_precision' in statistics[strategy] and 'test_recall' in statistics[strategy]:
+            precision = statistics[strategy]['test_precision']['mean']
+            recall = statistics[strategy]['test_recall']['mean']
+            precision_ci = statistics[strategy]['test_precision']['ci_95']
+            recall_ci = statistics[strategy]['test_recall']['ci_95']
+            
+            recalls.append(recall)
+            precisions.append(precision)
+            
+            ax.errorbar(recall, precision, xerr=recall_ci, yerr=precision_ci,
+                       fmt='o', markersize=12, alpha=0.8, color=colors[i],
+                       label=strategy, capsize=5, capthick=2, linewidth=2)
+            
+            # Annotate
+            ax.annotate(strategy.replace('-', '\n'), (recall, precision),
+                       xytext=(10, 10), textcoords='offset points',
+                       fontsize=9, alpha=0.7,
+                       bbox=dict(boxstyle='round,pad=0.5', facecolor=colors[i], alpha=0.2))
+    
+    # Draw F1 contours
+    recall_range = np.linspace(0.01, 1, 100)
+    precision_range = np.linspace(0.01, 1, 100)
+    R, P = np.meshgrid(recall_range, precision_range)
+    F1 = 2 * P * R / (P + R)
+    
+    contours = ax.contour(R, P, F1, levels=[0.5, 0.6, 0.7, 0.75, 0.8, 0.85],
+                          colors='gray', alpha=0.3, linewidths=1)
+    ax.clabel(contours, inline=True, fontsize=8, fmt='F1=%.2f')
+    
+    # Find and draw Pareto frontier
+    points = list(zip(recalls, precisions, strategy_names))
+    points_sorted = sorted(points, key=lambda x: x[0])
+    
+    pareto_points = []
+    max_precision = 0
+    for recall, precision, strategy in points_sorted:
+        if precision > max_precision:
+            pareto_points.append((recall, precision, strategy))
+            max_precision = precision
+    
+    if len(pareto_points) > 1:
+        pareto_recalls = [p[0] for p in pareto_points]
+        pareto_precisions = [p[1] for p in pareto_points]
+        ax.plot(pareto_recalls, pareto_precisions, 'r--', 
+               linewidth=3, alpha=0.7, label='Pareto Frontier', zorder=10)
+    
+    ax.set_xlabel('Recall', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Precision', fontsize=14, fontweight='bold')
+    ax.set_title('Pareto Front Analysis with F1 Contours\n(Error bars show 95% confidence intervals)', 
+                fontsize=16, fontweight='bold', pad=20)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='best', fontsize=10, framealpha=0.9)
+    ax.set_xlim(0, 1.05)
+    ax.set_ylim(0, 1.05)
+    
+    plt.tight_layout()
+    pareto_path = output_dir / 'plots' / 'pareto_front_with_f1_contours.png'
+    pareto_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(pareto_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"    Saved: {pareto_path}")
+
+
+def generate_roc_pr_curves(averaged_curves, statistics, output_dir):
+    """Generate ROC and PR curves."""
+    print("  Generating ROC and PR curves...")
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    colors = plt.cm.Set1(np.linspace(0, 1, 7))
+    
+    strategy_names = list(averaged_curves.keys())
+    
+    # ROC Curves
     for i, strategy in enumerate(strategy_names):
         if strategy in averaged_curves:
             curves = averaged_curves[strategy]
             roc_auc = statistics[strategy]['test_roc_auc']['mean']
-            axes[0].plot(curves['roc_fpr'], curves['roc_tpr'], 
-                        color=colors[i], linewidth=2, alpha=0.8,
-                        label=f'{strategy} (AUC={roc_auc:.3f})')
+            ax1.plot(curves['roc_fpr'], curves['roc_tpr'],
+                    color=colors[i], linewidth=2.5, alpha=0.8,
+                    label=f'{strategy} (AUC={roc_auc:.3f})')
     
-    axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=1)
-    axes[0].set_xlabel('False Positive Rate')
-    axes[0].set_ylabel('True Positive Rate')
-    axes[0].set_title('ROC Curves (Averaged)')
-    axes[0].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    axes[0].grid(True, alpha=0.3)
+    ax1.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=1.5, label='Random')
+    ax1.set_xlabel('False Positive Rate', fontsize=13, fontweight='bold')
+    ax1.set_ylabel('True Positive Rate', fontsize=13, fontweight='bold')
+    ax1.set_title('ROC Curves (Averaged over 3 runs)', fontsize=14, fontweight='bold')
+    ax1.legend(loc='lower right', fontsize=10)
+    ax1.grid(True, alpha=0.3)
     
-    # 2. Precision-Recall Curves
+    # PR Curves
     for i, strategy in enumerate(strategy_names):
         if strategy in averaged_curves:
             curves = averaged_curves[strategy]
             pr_auc = statistics[strategy]['test_pr_auc']['mean']
-            axes[1].plot(curves['pr_recall'], curves['pr_precision'],
-                        color=colors[i], linewidth=2, alpha=0.8,
-                        label=f'{strategy} (AUC={pr_auc:.3f})')
+            ax2.plot(curves['pr_recall'], curves['pr_precision'],
+                    color=colors[i], linewidth=2.5, alpha=0.8,
+                    label=f'{strategy} (AUC={pr_auc:.3f})')
     
-    axes[1].set_xlabel('Recall')
-    axes[1].set_ylabel('Precision')
-    axes[1].set_title('Precision-Recall Curves (Averaged)')
-    axes[1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    axes[1].grid(True, alpha=0.3)
-    
-    # 3. Performance Metrics Comparison
-    x = np.arange(len(strategy_names))
-    width = 0.2
-    
-    precisions = [statistics[s]['test_precision']['mean'] for s in strategy_names]
-    recalls = [statistics[s]['test_recall']['mean'] for s in strategy_names]
-    f1_scores = [statistics[s]['test_f1']['mean'] for s in strategy_names]
-    
-    axes[2].bar(x - width, precisions, width, label='Precision', alpha=0.8, color='skyblue')
-    axes[2].bar(x, recalls, width, label='Recall', alpha=0.8, color='lightcoral')
-    axes[2].bar(x + width, f1_scores, width, label='F1-Score', alpha=0.8, color='lightgreen')
-    
-    axes[2].set_xlabel('Strategy')
-    axes[2].set_ylabel('Score')
-    axes[2].set_title('Performance Metrics (Averaged)')
-    axes[2].set_xticks(x)
-    axes[2].set_xticklabels([s.replace('-', '\n') for s in strategy_names], rotation=45, ha='right')
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
+    ax2.set_xlabel('Recall', fontsize=13, fontweight='bold')
+    ax2.set_ylabel('Precision', fontsize=13, fontweight='bold')
+    ax2.set_title('Precision-Recall Curves (Averaged over 3 runs)', fontsize=14, fontweight='bold')
+    ax2.legend(loc='best', fontsize=10)
+    ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    
-    # Save plot
-    plot_path = output_dir / 'plots' / 'multiple_runs_averaged_comparison.png'
-    plot_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(plot_path, dpi=300, bbox_inches='tight')
-    plt.close(fig)
-    print(f"    Saved: {plot_path}")
+    roc_pr_path = output_dir / 'plots' / 'roc_pr_curves.png'
+    roc_pr_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(roc_pr_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"    Saved: {roc_pr_path}")
 
-def generate_detector_coverage_plots(all_runs_results, statistics, train_sets, train_labels, test_sets, test_labels, vocab_size, output_dir):
-    """Generate averaged detector coverage plots"""
-    print("  Generating detector coverage analysis...")
+
+def generate_detector_coverage_plot(statistics, output_dir):
+    """Generate detector coverage plot showing recall vs number of detectors."""
+    print("  Generating detector coverage plot...")
     
-    # Generate coverage data for all strategies
-    all_strategies = ['F1-Optimized', 'Precision-Optimized', 'Recall-Optimized', 
-                      'Precision-Weighted', 'Recall-Weighted', 'Balanced-Weighted', 'Conservative']
+    fig, ax = plt.subplots(figsize=(12, 8))
+    colors = plt.cm.Set1(np.linspace(0, 1, 7))
     
-    strategy_coverage = defaultdict(list)
+    strategy_names = list(statistics.keys())
     
-    # Use the most common parameters from the first few runs
-    for strategy in all_strategies:
-        if strategy in statistics:
-            print(f"    Generating coverage for {strategy}...")
+    # For each strategy, show target vs generated detectors and resulting recall
+    for i, strategy in enumerate(strategy_names):
+        if 'num_detectors_target' in statistics[strategy] and 'detectors_generated' in statistics[strategy]:
+            target = statistics[strategy]['num_detectors_target']['mean']
+            generated = statistics[strategy]['detectors_generated']['mean']
+            recall = statistics[strategy]['test_recall']['mean']
             
-            # Get most common parameters across runs
-            param_combinations = []
-            for run in all_runs_results[:3]:  # Use first 3 runs to determine common params
-                if strategy in run:
-                    params = {
-                        'detector_size': run[strategy].get('detector_size', 3),
-                        'overlap_threshold': run[strategy].get('overlap_threshold', 1),
-                        'min_activations': run[strategy].get('min_activations', 2)
-                    }
-                    param_combinations.append(params)
+            # Plot point
+            ax.scatter(generated, recall, s=200, alpha=0.7, color=colors[i],
+                      label=f'{strategy} (target={int(target)})', marker='o', edgecolors='black', linewidth=2)
             
-            if param_combinations:
-                # Use most common parameters
-                common_params = param_combinations[0]  # Simplified - use first
-                
-                # Generate coverage for 3 runs (to save time)
-                for run_id in range(1, 4):
-                    coverage_data = generate_detector_coverage_single_run(
-                        train_sets, train_labels, test_sets, test_labels, 
-                        vocab_size, common_params, run_id
-                    )
-                    strategy_coverage[strategy].append(coverage_data)
+            # Annotate with target and generated
+            ax.annotate(f'{int(generated)}', (generated, recall),
+                       xytext=(5, 5), textcoords='offset points',
+                       fontsize=9, fontweight='bold')
     
-    # Average coverage data
-    averaged_coverage = {}
-    for strategy, runs_data in strategy_coverage.items():
-        if runs_data:
-            detector_counts = [50, 100, 200, 300, 500, 700, 1000, 1500, 2000, 3000]
-            avg_recalls = []
-            avg_precisions = []
-            avg_f1s = []
-            
-            for i, num_det in enumerate(detector_counts):
-                recalls = [run[i]['recall'] for run in runs_data if i < len(run)]
-                precisions = [run[i]['precision'] for run in runs_data if i < len(run)]
-                f1s = [run[i]['f1'] for run in runs_data if i < len(run)]
-                
-                avg_recalls.append(np.mean(recalls) if recalls else 0)
-                avg_precisions.append(np.mean(precisions) if precisions else 0)
-                avg_f1s.append(np.mean(f1s) if f1s else 0)
-            
-            averaged_coverage[strategy] = {
-                'detector_counts': detector_counts,
-                'recalls': avg_recalls,
-                'precisions': avg_precisions,
-                'f1s': avg_f1s
-            }
-    
-    # Plot detector coverage
-    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-    colors = plt.cm.Set1(np.linspace(0, 1, len(all_strategies)))
-    
-    for i, strategy in enumerate(all_strategies):
-        if strategy in averaged_coverage:
-            data = averaged_coverage[strategy]
-            ax.plot(data['detector_counts'], data['recalls'], 
-                   marker='o', linewidth=2, markersize=6, color=colors[i],
-                   label=f'{strategy}', alpha=0.8)
-    
-    ax.set_xlabel('Number of Detectors (Target)')
-    ax.set_ylabel('Recall')
-    ax.set_title('Detector Coverage Analysis: Recall vs Number of Detectors (Averaged)')
-    ax.legend()
+    ax.set_xlabel('Number of Detectors Generated', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Recall', fontsize=13, fontweight='bold')
+    ax.set_title('Detector Coverage: Recall vs Number of Detectors\n(Averaged over 3 runs)', 
+                fontsize=14, fontweight='bold', pad=20)
+    ax.legend(loc='best', fontsize=10, framealpha=0.9)
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(0, 3200)
-    ax.set_ylim(0, 1)
+    ax.set_ylim(0, 1.05)
     
-    # Save plot
-    coverage_path = output_dir / 'plots' / 'multiple_runs_detector_coverage.png'
+    plt.tight_layout()
+    coverage_path = output_dir / 'plots' / 'detector_coverage.png'
     coverage_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(coverage_path, dpi=300, bbox_inches='tight')
-    plt.close(fig)
+    plt.savefig(coverage_path, dpi=300, bbox_inches='tight')
+    plt.close()
     print(f"    Saved: {coverage_path}")
 
-def save_results(statistics, all_runs_results, output_dir):
-    """Save statistical results to files"""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+
+def save_score_table(statistics, output_dir):
+    """Save score table with all metrics."""
+    print("  Saving score table...")
     
-    # Save detailed statistics as JSON
-    with open(output_dir / 'multiple_runs_statistics.json', 'w') as f:
-        # Convert numpy types to regular Python types for JSON serialization
-        stats_for_json = {}
-        for strategy, metrics in statistics.items():
-            stats_for_json[strategy] = {}
-            for metric, values in metrics.items():
-                stats_for_json[strategy][metric] = {k: float(v) if isinstance(v, (np.integer, np.floating)) else v 
-                                                   for k, v in values.items()}
-        json.dump(stats_for_json, f, indent=2)
+    score_data = []
+    for strategy in statistics.keys():
+        row = {
+            'Strategy': strategy,
+            'Precision': f"{statistics[strategy]['test_precision']['mean']:.4f} ± {statistics[strategy]['test_precision']['ci_95']:.4f}",
+            'Recall': f"{statistics[strategy]['test_recall']['mean']:.4f} ± {statistics[strategy]['test_recall']['ci_95']:.4f}",
+            'F1': f"{statistics[strategy]['test_f1']['mean']:.4f} ± {statistics[strategy]['test_f1']['ci_95']:.4f}",
+            'ROC-AUC': f"{statistics[strategy]['test_roc_auc']['mean']:.4f} ± {statistics[strategy]['test_roc_auc']['ci_95']:.4f}",
+            'PR-AUC': f"{statistics[strategy]['test_pr_auc']['mean']:.4f} ± {statistics[strategy]['test_pr_auc']['ci_95']:.4f}",
+            'Accuracy': f"{statistics[strategy]['test_accuracy']['mean']:.4f} ± {statistics[strategy]['test_accuracy']['ci_95']:.4f}",
+            'FP': f"{statistics[strategy]['false_positives']['mean']:.1f} ± {statistics[strategy]['false_positives']['ci_95']:.1f}",
+            'FN': f"{statistics[strategy]['false_negatives']['mean']:.1f} ± {statistics[strategy]['false_negatives']['ci_95']:.1f}",
+        }
+        score_data.append(row)
     
-    # Create Table 1: Performance and Error Analysis (clean means for LaTeX)
-    performance_data = []
-    strategy_names = list(statistics.keys())
+    score_df = pd.DataFrame(score_data)
+    score_path = output_dir / 'score_table.csv'
+    score_df.to_csv(score_path, index=False)
+    print(f"    Saved: {score_path}")
+
+
+def save_hyperparameters_table(statistics, all_runs_results, output_dir):
+    """Save optimal hyperparameters table."""
+    print("  Saving hyperparameters table...")
     
-    for strategy in strategy_names:
-        if strategy in statistics:
-            stats = statistics[strategy]
+    hyperparam_data = []
+    for strategy in statistics.keys():
+        # Find most common hyperparameters across runs
+        matching_rules = []
+        rule_params = []
+        detector_sizes = []
+        min_activations = []
+        vocab_sizes = []
+        
+        for run in all_runs_results:
+            if strategy in run:
+                matching_rules.append(run[strategy]['matching_rule'])
+                rule_params.append(run[strategy]['rule_parameter'])
+                detector_sizes.append(run[strategy]['detector_size'])
+                min_activations.append(run[strategy]['min_activations'])
+                vocab_sizes.append(run[strategy]['vocab_size'])
+        
+        if matching_rules:
+            most_common_rule = Counter(matching_rules).most_common(1)[0][0]
+            most_common_rule_param = Counter(rule_params).most_common(1)[0][0]
+            most_common_size = Counter(detector_sizes).most_common(1)[0][0]
+            most_common_min_act = Counter(min_activations).most_common(1)[0][0]
+            most_common_vocab = Counter(vocab_sizes).most_common(1)[0][0]
+            
             row = {
                 'Strategy': strategy,
-                'Precision': f"{stats['test_precision']['mean']:.3f}",
-                'Recall': f"{stats['test_recall']['mean']:.3f}",
-                'F1-Score': f"{stats['test_f1']['mean']:.3f}",
-                'ROC-AUC': f"{stats['test_roc_auc']['mean']:.3f}",
-                'PR-AUC': f"{stats['test_pr_auc']['mean']:.3f}",
-                'Accuracy': f"{stats['test_accuracy']['mean']:.3f}",
-                'False Positives': f"{stats['false_positives']['mean']:.0f}",
-                'False Negatives': f"{stats['false_negatives']['mean']:.0f}",
+                'Matching Rule': most_common_rule,
+                'Rule Parameter': most_common_rule_param,
+                'Detector Size': most_common_size,
+                'Num Detectors (target)': f"{statistics[strategy]['num_detectors_target']['mean']:.0f}",
+                'Detectors Generated': f"{statistics[strategy]['detectors_generated']['mean']:.0f} ± {statistics[strategy]['detectors_generated']['ci_95']:.0f}",
+                'Min Activations': most_common_min_act,
+                'Vocab Size': most_common_vocab,
             }
-            performance_data.append(row)
+            hyperparam_data.append(row)
     
-    performance_df = pd.DataFrame(performance_data)
-    performance_df.to_csv(output_dir / 'performance_table_means.csv', index=False)
+    hyperparam_df = pd.DataFrame(hyperparam_data)
+    hyperparam_path = output_dir / 'optimal_hyperparameters.csv'
+    hyperparam_df.to_csv(hyperparam_path, index=False)
+    print(f"    Saved: {hyperparam_path}")
+
+
+def save_detector_generation_table(statistics, output_dir):
+    """Save detector generation statistics table."""
+    print("  Saving detector generation table...")
     
-    # Create Table 2: Optimal Hyperparameters (most frequent selection)
-    hyperparameter_data = []
-    
-    for strategy in strategy_names:
-        if strategy in statistics:
-            # Find most frequently selected hyperparameters across runs
-            param_combinations = []
-            for run in all_runs_results:
-                if strategy in run:
-                    params = (
-                        run[strategy].get('detector_size', 0),
-                        run[strategy].get('overlap_threshold', 0), 
-                        run[strategy].get('min_activations', 0)
-                    )
-                    param_combinations.append(params)
-            
-            if param_combinations:
-                # Find most common parameter combination
-                from collections import Counter
-                most_common_params = Counter(param_combinations).most_common(1)[0][0]
-                
-                # Get average number of detectors generated for this strategy
-                avg_detectors = statistics[strategy]['detectors_generated']['mean']
+    detector_data = []
+    for strategy in statistics.keys():
+        try:
+            # Check if ham_matches_avg exists and has the mean field
+            if 'ham_matches_avg' in statistics[strategy] and 'mean' in statistics[strategy]['ham_matches_avg']:
+                # Get detector_size - might be in mean or mode
+                detector_size = statistics[strategy]['detector_size'].get('mean', 
+                                statistics[strategy]['detector_size'].get('mode', 0))
                 
                 row = {
                     'Strategy': strategy,
-                    'Detectors Generated': f"{avg_detectors:.0f}",
-                    'Detector Size': int(most_common_params[0]),
-                    'Overlap Threshold': int(most_common_params[1]),
-                    'Min Activations': int(most_common_params[2])
+                    'Detectors Generated': f"{statistics[strategy]['detectors_generated']['mean']:.0f} ± {statistics[strategy]['detectors_generated']['ci_95']:.0f}",
+                    'Detector Size': f"{detector_size:.1f}" if isinstance(detector_size, (int, float)) else str(detector_size),
+                    'Ham Matches (avg)': f"{statistics[strategy]['ham_matches_avg']['mean']:.2f} ± {statistics[strategy]['ham_matches_avg']['ci_95']:.2f}",
+                    'Spam Matches (avg)': f"{statistics[strategy]['spam_matches_avg']['mean']:.2f} ± {statistics[strategy]['spam_matches_avg']['ci_95']:.2f}",
+                    'Discrimination Rate': f"{statistics[strategy]['discrimination_rate']['mean']:.2f} ± {statistics[strategy]['discrimination_rate']['ci_95']:.2f}",
+                    'Matching Rule': statistics[strategy]['matching_rule'].get('mode', 'N/A'),
                 }
-                hyperparameter_data.append(row)
+                detector_data.append(row)
+        except Exception as e:
+            print(f"    Warning: Could not add {strategy} to detector table: {e}")
+            continue
     
-    hyperparameter_df = pd.DataFrame(hyperparameter_data)
-    hyperparameter_df.to_csv(output_dir / 'hyperparameters_table.csv', index=False)
+    detector_df = pd.DataFrame(detector_data)
     
-    # Create summary with confidence intervals for academic reporting
-    summary_data = []
-    for strategy in strategy_names:
-        if strategy in statistics:
-            stats = statistics[strategy]
-            row = {
-                'Strategy': strategy,
-                'Precision (Mean ± 95% CI)': f"{stats['test_precision']['mean']:.3f} ± {stats['test_precision']['ci_95']:.3f}",
-                'Recall (Mean ± 95% CI)': f"{stats['test_recall']['mean']:.3f} ± {stats['test_recall']['ci_95']:.3f}",
-                'F1-Score (Mean ± 95% CI)': f"{stats['test_f1']['mean']:.3f} ± {stats['test_f1']['ci_95']:.3f}",
-                'ROC-AUC (Mean ± 95% CI)': f"{stats['test_roc_auc']['mean']:.3f} ± {stats['test_roc_auc']['ci_95']:.3f}",
-                'Runs': stats['test_precision']['n_runs']
-            }
-            summary_data.append(row)
+    if len(detector_df) == 0:
+        print(f"    Warning: No detector data to save")
+        return
     
-    summary_df = pd.DataFrame(summary_data)
-    summary_df.to_csv(output_dir / 'multiple_runs_summary.csv', index=False)
-    
-    print(f"\nResults saved:")
-    print(f"- Performance table (means): {output_dir / 'performance_table_means.csv'}")
-    print(f"- Hyperparameters table: {output_dir / 'hyperparameters_table.csv'}")
-    print(f"- Statistical summary: {output_dir / 'multiple_runs_summary.csv'}")
-    print(f"- Detailed statistics: {output_dir / 'multiple_runs_statistics.json'}")
-    """Save statistical results to files"""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Save detailed statistics as JSON
-    with open(output_dir / 'multiple_runs_statistics.json', 'w') as f:
-        # Convert numpy types to regular Python types for JSON serialization
-        stats_for_json = {}
-        for strategy, metrics in statistics.items():
-            stats_for_json[strategy] = {}
-            for metric, values in metrics.items():
-                stats_for_json[strategy][metric] = {k: float(v) if isinstance(v, (np.integer, np.floating)) else v 
-                                                   for k, v in values.items()}
-        json.dump(stats_for_json, f, indent=2)
-    
-    # Create Table 1: Performance and Error Analysis (clean means for LaTeX)
-    performance_data = []
-    strategy_names = list(statistics.keys())
-    
-    for strategy in strategy_names:
-        if strategy in statistics:
-            stats = statistics[strategy]
-            row = {
-                'Strategy': strategy,
-                'Precision': f"{stats['test_precision']['mean']:.3f}",
-                'Recall': f"{stats['test_recall']['mean']:.3f}",
-                'F1-Score': f"{stats['test_f1']['mean']:.3f}",
-                'ROC-AUC': f"{stats['test_roc_auc']['mean']:.3f}",
-                'PR-AUC': f"{stats['test_pr_auc']['mean']:.3f}",
-                'Accuracy': f"{stats['test_accuracy']['mean']:.3f}",
-                'False Positives': f"{stats['false_positives']['mean']:.0f}",
-                'False Negatives': f"{stats['false_negatives']['mean']:.0f}",
-            }
-            performance_data.append(row)
-    
-    performance_df = pd.DataFrame(performance_data)
-    performance_df.to_csv(output_dir / 'performance_table_means.csv', index=False)
-    
-    # Create Table 2: Optimal Hyperparameters (most frequent selection)
-    hyperparameter_data = []
-    
-    for strategy in strategy_names:
-        if strategy in statistics:
-            # Find most frequently selected hyperparameters across runs
-            param_combinations = []
-            for run in all_runs_results:
-                if strategy in run:
-                    params = (
-                        run[strategy].get('detector_size', 0),
-                        run[strategy].get('overlap_threshold', 0), 
-                        run[strategy].get('min_activations', 0)
-                    )
-                    param_combinations.append(params)
-            
-            if param_combinations:
-                # Find most common parameter combination
-                from collections import Counter
-                most_common_params = Counter(param_combinations).most_common(1)[0][0]
-                
-                # Get average number of detectors generated for this strategy
-                avg_detectors = statistics[strategy]['detectors_generated']['mean']
-                
-                row = {
-                    'Strategy': strategy,
-                    'Detectors Generated': f"{avg_detectors:.0f}",
-                    'Detector Size': int(most_common_params[0]),
-                    'Overlap Threshold': int(most_common_params[1]),
-                    'Min Activations': int(most_common_params[2])
-                }
-                hyperparameter_data.append(row)
-    
-    hyperparameter_df = pd.DataFrame(hyperparameter_data)
-    hyperparameter_df.to_csv(output_dir / 'hyperparameters_table.csv', index=False)
-    
-    # Create summary with confidence intervals for academic reporting
-    summary_data = []
-    for strategy in strategy_names:
-        if strategy in statistics:
-            stats = statistics[strategy]
-            row = {
-                'Strategy': strategy,
-                'Precision (Mean ± 95% CI)': f"{stats['test_precision']['mean']:.3f} ± {stats['test_precision']['ci_95']:.3f}",
-                'Recall (Mean ± 95% CI)': f"{stats['test_recall']['mean']:.3f} ± {stats['test_recall']['ci_95']:.3f}",
-                'F1-Score (Mean ± 95% CI)': f"{stats['test_f1']['mean']:.3f} ± {stats['test_f1']['ci_95']:.3f}",
-                'ROC-AUC (Mean ± 95% CI)': f"{stats['test_roc_auc']['mean']:.3f} ± {stats['test_roc_auc']['ci_95']:.3f}",
-                'Runs': stats['test_precision']['n_runs']
-            }
-            summary_data.append(row)
-    
-    summary_df = pd.DataFrame(summary_data)
-    summary_df.to_csv(output_dir / 'multiple_runs_summary.csv', index=False)
-    
-    print(f"\nResults saved:")
-    print(f"- Performance table (means): {output_dir / 'performance_table_means.csv'}")
-    print(f"- Hyperparameters table: {output_dir / 'hyperparameters_table.csv'}")
-    print(f"- Statistical summary: {output_dir / 'multiple_runs_summary.csv'}")
-    print(f"- Detailed statistics: {output_dir / 'multiple_runs_statistics.json'}")
+    detector_path = output_dir / 'detector_generation_statistics.csv'
+    detector_df.to_csv(detector_path, index=False)
+    print(f"    Saved: {detector_path}")
+
 
 def main():
-    """Run multiple optimization comparisons and calculate statistics"""
-    print("="*70)
-    print("NSA MULTIPLE RUNS OPTIMIZATION COMPARISON")
-    print("="*70)
+    """Main execution pipeline."""
+    print("=" * 70)
+    print("NSA MULTIPLE RUNS (3x) OPTIMIZATION COMPARISON")
+    print("Seven Optimization Strategies with Vocabulary-based NSA")
+    print("=" * 70)
     
-    # Load and prepare data once
-    print("1. Loading and preparing data...")
+    # 1. Load data
+    print("\n1. Loading and preparing data...")
     texts, labels = load_data(str(constants.DATA_PATH))
     
-    # Split data once for all runs (keep consistent across runs)
+    # Split data once (fixed seed for consistency across runs)
     train_texts, train_labels, val_texts, val_labels, test_texts, test_labels = train_val_test_split(
-        texts, labels, 
-        test_ratio=constants.TEST_RATIO, 
+        texts, labels,
+        test_ratio=constants.TEST_RATIO,
         val_ratio=constants.VAL_RATIO,
-        seed=42
+        seed=42  # Fixed seed so all runs use same split
     )
     
-    print(f"Data loaded: {len(train_texts)} train, {len(val_texts)} val, {len(test_texts)} test")
+    print(f"Data: {len(train_texts)} train, {len(val_texts)} val, {len(test_texts)} test")
+    print("Using vocabulary-based NSA with r-contiguous and Hamming matching")
     
-    # Build vocabulary and create token sets
-    vocab_list, vocab_index = build_vocabulary(train_texts, 
-                                             min_freq=constants.VOCAB_MIN_FREQ, 
-                                             max_size=constants.VOCAB_MAX_SIZE)
-    vocab_size = len(vocab_list)
-    print(f"Vocabulary size: {vocab_size}")
-    
-    train_sets = texts_to_sets(train_texts, vocab_index)
-    val_sets = texts_to_sets(val_texts, vocab_index)
-    test_sets = texts_to_sets(test_texts, vocab_index)
-    
-    # Run multiple comparisons
-    print(f"\n2. Running 10 independent optimization comparisons...")
+    # 2. Run 3 independent comparisons
+    print(f"\n2. Running 3 independent optimization comparisons...")
     all_runs_results = []
     
-    for run_id in range(1, 11):
+    for run_id in range(1, 4):
         try:
             run_results = run_single_comparison(
-                train_sets, train_labels, val_sets, val_labels, 
-                test_sets, test_labels, vocab_size, run_id
+                train_texts, train_labels, val_texts, val_labels,
+                test_texts, test_labels, run_id
             )
             all_runs_results.append(run_results)
-            print(f"  Run {run_id}: Completed successfully")
+            print(f"  Run {run_id}: ✓ Completed")
         except Exception as e:
-            print(f"  Run {run_id}: Failed with error: {e}")
+            print(f"  Run {run_id}: ✗ Failed with error:")
+            import traceback
+            traceback.print_exc()
             continue
     
     if not all_runs_results:
-        print("ERROR: No runs completed successfully!")
+        print("\n❌ No runs completed successfully!")
         return
     
-    print(f"\n3. Calculating statistics from {len(all_runs_results)} successful runs...")
-    statistics = calculate_statistics(all_runs_results)
+    print(f"\n✓ Completed {len(all_runs_results)} successful runs")
     
-    print(f"\n4. Generating averaged plots and detector coverage analysis...")
-    # Calculate averaged curves
+    # 3. Calculate statistics
+    print(f"\n3. Calculating statistics...")
+    statistics = calculate_statistics(all_runs_results)
     averaged_curves = average_curves(all_runs_results)
     
-    # Save results
-    output_dir = Path(__file__).parent.parent / 'results'
-    save_results(statistics, all_runs_results, output_dir)
+    # 4. Generate all plots
+    print(f"\n4. Generating plots...")
+    output_dir = constants.RESULTS_DIR
     
-    # Generate plots
-    generate_averaged_plots(statistics, averaged_curves, output_dir)
-    generate_detector_coverage_plots(all_runs_results, statistics, train_sets, train_labels, test_sets, test_labels, vocab_size, output_dir)
+    try:
+        generate_pareto_front_with_f1_contours(statistics, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error generating Pareto front: {e}")
     
-    # Print summary
-    print("\n" + "="*70)
-    print("MULTIPLE RUNS SUMMARY")
-    print("="*70)
+    try:
+        generate_roc_pr_curves(averaged_curves, statistics, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error generating ROC/PR curves: {e}")
     
-    for strategy in ['F1-Optimized', 'Precision-Optimized', 'Recall-Optimized', 'Conservative']:
+    try:
+        generate_detector_coverage_plot(statistics, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error generating detector coverage plot: {e}")
+    
+    # 5. Save all tables
+    print(f"\n5. Saving tables...")
+    try:
+        save_score_table(statistics, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error saving score table: {e}")
+    
+    try:
+        save_hyperparameters_table(statistics, all_runs_results, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error saving hyperparameters table: {e}")
+    
+    try:
+        save_detector_generation_table(statistics, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Error saving detector generation table: {e}")
+    
+    # 6. Print summary
+    print(f"\n{'='*70}")
+    print("RESULTS SUMMARY (Mean ± 95% CI)")
+    print(f"{'='*70}")
+    
+    for strategy in ['F1-Optimized', 'Precision-Optimized', 'Recall-Optimized', 
+                     'Precision-Weighted', 'Recall-Weighted', 'Balance-Weighted', 'Conservative']:
         if strategy in statistics:
             stats = statistics[strategy]
             print(f"\n{strategy}:")
-            print(f"  Precision: {stats['test_precision']['mean']:.3f} ± {stats['test_precision']['ci_95']:.3f}")
-            print(f"  Recall:    {stats['test_recall']['mean']:.3f} ± {stats['test_recall']['ci_95']:.3f}")
-            print(f"  F1-Score:  {stats['test_f1']['mean']:.3f} ± {stats['test_f1']['ci_95']:.3f}")
+            print(f"  F1:        {stats['test_f1']['mean']:.4f} ± {stats['test_f1']['ci_95']:.4f}")
+            print(f"  Precision: {stats['test_precision']['mean']:.4f} ± {stats['test_precision']['ci_95']:.4f}")
+            print(f"  Recall:    {stats['test_recall']['mean']:.4f} ± {stats['test_recall']['ci_95']:.4f}")
+            print(f"  ROC-AUC:   {stats['test_roc_auc']['mean']:.4f} ± {stats['test_roc_auc']['ci_95']:.4f}")
     
-    print("\n" + "="*70)
-    print("Analysis complete!")
-    print("="*70)
+    print(f"\n{'='*70}")
+    print("✓ Analysis complete!")
+    print(f"{'='*70}")
+    print(f"\nResults saved to: {output_dir}")
+    print(f"\nGenerated files:")
+    print(f"  Plots:")
+    print(f"    - pareto_front_with_f1_contours.png")
+    print(f"    - roc_pr_curves.png")
+    print(f"    - detector_coverage.png")
+    print(f"  Tables:")
+    print(f"    - score_table.csv")
+    print(f"    - optimal_hyperparameters.csv")
+    print(f"    - detector_generation_statistics.csv")
+
 
 if __name__ == "__main__":
     main()

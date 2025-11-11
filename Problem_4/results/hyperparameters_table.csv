@@ -1,8 +1,0 @@
-Strategy,Detectors Generated,Detector Size,Overlap Threshold,Min Activations
-F1-Optimized,484,2,1,3
-Precision-Optimized,197,2,1,3
-Recall-Optimized,940,3,1,1
-Precision-Weighted,409,4,1,3
-Recall-Weighted,1419,2,1,3
-Balanced-Weighted,609,2,1,3
-Conservative,399,4,1,2
