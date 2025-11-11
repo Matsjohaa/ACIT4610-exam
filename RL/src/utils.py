@@ -82,6 +82,7 @@ def save_manifest(cfg: Any, run_dir: Path) -> None:
         "alpha": cfg.alpha,
         "gamma": cfg.gamma,
         "seed": cfg.seed,
+        "step_penalty": cfg.step_penalty,
         "run_dir": str(cfg.run_dir),
         "optimistic_init": float(getattr(cfg, "optimistic_init", 0.0)),
         "alpha_schedule": str(getattr(cfg, "alpha_schedule", "const")),

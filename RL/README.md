@@ -58,9 +58,9 @@ python -m main plot --run_dir runs/8x8_ref
 ### Run baselines
 ```bash
 # Random
-python -m main baseline-random --map 8x8 --episodes 50000 --use_run_desc runs/8x8_ref
+python -m main baseline-random --map 8x8 --episodes 80000 --use_run_desc runs/8x8_ref
 # Heuristic (shortest path, ignores slippage)
-python -m main baseline-heuristic --map 8x8 --episodes 10000 --use_run_desc runs/8x8_ref
+python -m main baseline-heuristic --map 8x8 --episodes 20000 --use_run_desc runs/8x8_ref
 ```
 
 ---
@@ -85,10 +85,11 @@ python -m main baseline-heuristic --map 8x8 --episodes 10000 --use_run_desc runs
 | γ (discount) | `--gamma` = `0.99` vs `0.95` | Compare far- vs near-sighted agents |
 | α (learning rate) | `--alpha_schedule` = `const` / `linear` / `inv` | Compare stability vs speed |
 | Baselines | Random / Heuristic | Fixed reference lines |
+| **Reward shaping** | `--step_penalty` = `0.0`, `-0.001`, `-0.01` | Test impact of mild vs strong step penalty on 6×6 and 8×8 maps |
 
 After training, evaluate each Q-table:
 ```bash
-python -m main eval --map 8x8 --checkpoint runs/<run_name>/checkpoints/qtable-final.npz --episodes 10000
+python -m main eval --map 8x8 --checkpoint runs/<run_name>/checkpoints/qtable-final.npz --episodes 20000
 ```
 
 ## Reproducibility notes

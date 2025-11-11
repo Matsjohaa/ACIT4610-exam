@@ -1,0 +1,13 @@
+{
+  "run_name": "rl6x6_baseline",
+  "map": "6x6",
+  "episodes": 80000,
+  "alpha": 0.1,
+  "alpha_schedule": "const",
+  "alpha_min": 0.1,
+  "gamma": 0.99,
+  "epsilon_schedule": "exp",
+  "seed": 42,
+  "optimistic_init": 0.0,
+  "step_penalty": 0.0
+}
