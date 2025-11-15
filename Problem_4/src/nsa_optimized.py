@@ -213,57 +213,89 @@ class NegativeSelectionClassifier:
             
             # PURE NSA: Extract ham patterns to avoid (self-tolerance)
             ham_pattern_sets = []
+            all_ham_patterns = set()  # Collect ALL unique ham patterns
             for text in ham_samples:
                 tokens = self._text_to_tokens(text)
                 patterns = self._get_patterns_from_tokens(tokens)
                 ham_pattern_sets.append(patterns)
+                all_ham_patterns.update(patterns)
             
-            print(f"  Extracted {sum(len(ps) for ps in ham_pattern_sets)} total ham patterns from {len(ham_samples)} samples")
+            print(f"  Extracted {sum(len(ps) for ps in ham_pattern_sets)} total ham patterns ({len(all_ham_patterns)} unique)")
             
-            # PURE NSA: Generate detectors through RANDOM sampling with negative selection
-            # IMPROVEMENT: Increase max_ham_match_ratio slightly to allow more detectors through
-            # This is still pure NSA - we're just being less strict about self-tolerance
-            effective_ham_ratio = min(0.15, self.max_ham_match_ratio * 3)  # Allow up to 15% ham matches
-            print(f"Generating {self.num_detectors} detectors via random sampling + negative selection...")
-            print(f"  Ham tolerance: {effective_ham_ratio*100:.1f}% (relaxed for better coverage)")
+            # IMPROVED PURE NSA STRATEGY: Generate detectors by MUTATING ham patterns
+            # This is theoretically sound pure NSA: we learn what "self" looks like,
+            # then generate "near-self" patterns that fail self-tolerance tests.
+            # These mutations are more likely to match real anomalies than random patterns.
+            
+            print(f"Generating {self.num_detectors} detectors via mutation-based negative selection...")
+            print(f"  Strategy: Mutate ham patterns, verify they don't match ham")
+            
+            detector_set = set()  # Track unique detectors
+            vocab_size = len(self.vocabulary)
+            
+            # Convert ham patterns to list for sampling
+            ham_pattern_list = list(all_ham_patterns)
+            print(f"  Using {len(ham_pattern_list)} unique ham patterns as mutation templates")
+            
+            # CRITICAL FIX: Use MUCH stricter tolerance
+            # Old: allowed matching up to 5% of ham samples (147 samples!)
+            # New: Reject if detector matches ham patterns in > 0.5% of samples
+            effective_ham_ratio = 0.005  # Ultra-strict: 0.5% tolerance
+            max_ham_matches = max(1, int(len(ham_samples) * effective_ham_ratio))
+            print(f"  Ham tolerance: max {max_ham_matches} ham sample matches allowed (ultra-strict)")
             
             attempts = 0
-            last_printed_count = 0
-            detector_set = set()  # Track unique detectors for diversity
+            max_attempts = self.num_detectors * 2000  # Increase attempts since it's harder now
             
-            while len(self.detectors) < self.num_detectors and attempts < self.max_attempts:
-                # PURE NSA: Random detector from vocabulary space
-                candidate = self._random_detector_vocab()
+            # ADAPTIVE MUTATION: Start with small mutations, increase if needed
+            # For detector_size=4, mutate 1-2 positions initially
+            mutations_per_pattern = max(1, self.detector_size // 2)  # Mutate ~50% of positions
+            
+            while len(self.detectors) < self.num_detectors and attempts < max_attempts:
+                # Sample a random ham pattern as template
+                if ham_pattern_list:
+                    template = random.choice(ham_pattern_list)
+                else:
+                    # Fallback to pure random if no ham patterns
+                    template = tuple(random.randint(0, vocab_size - 1) for _ in range(self.detector_size))
                 
-                # Check detector diversity (avoid duplicates)
-                if candidate in detector_set:
+                # Mutate the pattern by changing random positions
+                mutated = list(template)
+                positions_to_mutate = random.sample(range(len(mutated)), min(mutations_per_pattern, len(mutated)))
+                
+                for pos in positions_to_mutate:
+                    # Replace with a different random vocab index
+                    new_val = random.randint(0, vocab_size - 1)
+                    # Ensure it's actually different
+                    while new_val == mutated[pos] and vocab_size > 1:
+                        new_val = random.randint(0, vocab_size - 1)
+                    mutated[pos] = new_val
+                
+                candidate = tuple(mutated)
+                
+                # Skip if duplicate or if it's exactly a ham pattern
+                if candidate in detector_set or candidate in all_ham_patterns:
                     attempts += 1
                     continue
                 
-                # NEGATIVE SELECTION: Test candidate against ham (self) patterns
+                # NEGATIVE SELECTION: Test candidate against ham samples
                 ham_matches = 0
                 for pattern_set in ham_pattern_sets:
                     for pattern in pattern_set:
                         if self._matches_pattern(candidate, pattern):
                             ham_matches += 1
-                            break  # Count each ham sample only once
+                            break
                 
-                # Reject if candidate matches too many ham samples (fails self-tolerance)
-                # Using relaxed threshold to allow more detectors through
-                max_ham_matches = max(1, int(len(ham_samples) * effective_ham_ratio))
-                
+                # Accept if it doesn't match too many ham samples
                 if ham_matches <= max_ham_matches:
                     self.detectors.append(candidate)
                     detector_set.add(candidate)
+                    
+                    if len(self.detectors) % 100 == 0:
+                        success_rate = len(self.detectors) / attempts * 100 if attempts > 0 else 0
+                        print(f"  Generated {len(self.detectors)}/{self.num_detectors} detectors (success rate: {success_rate:.1f}%)...")
                 
                 attempts += 1
-                
-                # Print progress
-                if (len(self.detectors) > 0 and len(self.detectors) % 100 == 0 and len(self.detectors) != last_printed_count) or \
-                   (attempts % 1000 == 0 and attempts > 0):
-                    success_rate = len(self.detectors) / attempts * 100 if attempts > 0 else 0
-                    print(f"  Generated {len(self.detectors)}/{self.num_detectors} detectors (success rate: {success_rate:.1f}%)...")
-                    last_printed_count = len(self.detectors)
         
         else:
             # Binary representation (for compatibility)
@@ -291,27 +323,36 @@ class NegativeSelectionClassifier:
         
         for sample in X:
             if self.representation == "vocabulary":
-                # Vocabulary prediction
+                # Vocabulary prediction with min_activations support
                 tokens = self._text_to_tokens(sample)
                 if len(tokens) < self.detector_size:
                     predictions.append(0)  # Too short, classify as ham
                     continue
                 
-                # Check all patterns in the text
-                spam_detected = False
+                # Count how many detectors match patterns in the text
+                detector_activations = 0
+                matched_detectors = set()  # Track unique detector matches
+                
                 for i in range(len(tokens) - self.detector_size + 1):
                     pattern = tuple(tokens[i:i + self.detector_size])
                     
-                    # Check if any detector matches this pattern
-                    for detector in self.detectors:
-                        if self._matches_pattern(detector, pattern):
-                            spam_detected = True
-                            break
+                    # Check which detectors match this pattern
+                    for detector_idx, detector in enumerate(self.detectors):
+                        if detector_idx not in matched_detectors:  # Count each detector only once
+                            if self._matches_pattern(detector, pattern):
+                                matched_detectors.add(detector_idx)
+                                detector_activations += 1
+                                
+                                # Early exit if we have enough activations
+                                if detector_activations >= self.min_activations:
+                                    break
                     
-                    if spam_detected:
+                    # Early exit if threshold met
+                    if detector_activations >= self.min_activations:
                         break
                 
-                predictions.append(1 if spam_detected else 0)
+                # Classify as spam only if enough detectors activated
+                predictions.append(1 if detector_activations >= self.min_activations else 0)
             
             else:
                 # Binary prediction using minimum activations

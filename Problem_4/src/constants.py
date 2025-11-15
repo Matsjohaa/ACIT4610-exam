@@ -16,10 +16,25 @@ SEED: int | None = None
 # Project root for Problem_4 is therefore parent of this file's directory.
 _THIS_DIR = Path(__file__).resolve().parent
 _PROBLEM_ROOT = _THIS_DIR.parent  # .../Problem_4
-DATA_PATH = _PROBLEM_ROOT / "data" / "sms_spam.tsv"
+
+# Dataset selection - choose which dataset to use
+# Available options:
+#   "sms_spam"  - SMS Spam Collection (TSV format, 5,574 messages)
+#   "enron1"    - Enron Email Dataset (directory format, 5,975 emails)
+DATASET: str = "enron1"
+
+# Dataset paths (automatically determined based on DATASET selection)
+_DATASET_PATHS = {
+    "sms_spam": _PROBLEM_ROOT / "data" / "sms_spam.tsv",
+    "enron1": _PROBLEM_ROOT / "data" / "enron1",
+}
+
+DATA_PATH = _DATASET_PATHS.get(DATASET)
+if DATA_PATH is None:
+    raise ValueError(f"Unknown dataset: {DATASET}. Available: {list(_DATASET_PATHS.keys())}")
 
 TEST_RATIO: float = 0.2 
-VAL_RATIO: float = 0.15  #remainder after these two goes to training
+VAL_RATIO: float = 0.15  #LEGACY
 
 # Vocabulary / text processing (DEPRECATED - for backward compatibility only)
 VOCAB_MIN_FREQ: int = 2
@@ -61,6 +76,7 @@ TRUE_NEG_FILENAME = "true_negatives.tsv"   # ham predicted ham
 
 __all__ = [
 	"SEED",
+	"DATASET",
 	"DATA_PATH",
 	"TEST_RATIO",
 	"VAL_RATIO",

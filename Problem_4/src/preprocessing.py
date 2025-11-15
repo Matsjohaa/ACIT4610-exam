@@ -34,18 +34,63 @@ def clean_text(text: str) -> str:
 	return text
 
 
-def load_data(tsv_path: str) -> Tuple[List[str], List[int]]:
-	"""Load dataset and return cleaned texts & binary labels (spam=1, ham=0)."""
+def load_data(data_path: str) -> Tuple[List[str], List[int]]:
+	"""Load dataset and return cleaned texts & binary labels (spam=1, ham=0).
+	
+	Supports two formats:
+	1. TSV file: tab-separated with columns: label<TAB>message
+	2. Directory: with 'ham/' and 'spam/' subdirectories containing text files
+	"""
+	from pathlib import Path
+	
+	path = Path(data_path)
 	texts: List[str] = []
 	labels: List[int] = []
-	with open(tsv_path, "r", encoding="utf-8") as f:
-		reader = csv.reader(f, delimiter="\t")
-		for row in reader:
-			if len(row) < 2:
-				continue
-			label_raw, msg = row[0], row[1]
-			labels.append(1 if label_raw.strip().lower() == "spam" else 0)
-			texts.append(clean_text(msg))
+	
+	if path.is_file():
+		# TSV format (e.g., SMS spam dataset)
+		with open(path, "r", encoding="utf-8") as f:
+			reader = csv.reader(f, delimiter="\t")
+			for row in reader:
+				if len(row) < 2:
+					continue
+				label_raw, msg = row[0], row[1]
+				labels.append(1 if label_raw.strip().lower() == "spam" else 0)
+				texts.append(clean_text(msg))
+	
+	elif path.is_dir():
+		# Directory format (e.g., Enron dataset)
+		ham_dir = path / "ham"
+		spam_dir = path / "spam"
+		
+		if not ham_dir.exists() or not spam_dir.exists():
+			raise ValueError(f"Directory dataset must contain 'ham/' and 'spam/' subdirectories: {path}")
+		
+		# Load ham emails
+		for email_file in sorted(ham_dir.glob("*.txt")):
+			try:
+				with open(email_file, "r", encoding="utf-8", errors="ignore") as f:
+					content = f.read()
+					texts.append(clean_text(content))
+					labels.append(0)  # ham = 0
+			except Exception as e:
+				print(f"Warning: Could not read {email_file}: {e}")
+		
+		# Load spam emails
+		for email_file in sorted(spam_dir.glob("*.txt")):
+			try:
+				with open(email_file, "r", encoding="utf-8", errors="ignore") as f:
+					content = f.read()
+					texts.append(clean_text(content))
+					labels.append(1)  # spam = 1
+			except Exception as e:
+				print(f"Warning: Could not read {email_file}: {e}")
+		
+		print(f"Loaded {len([l for l in labels if l == 0])} ham and {len([l for l in labels if l == 1])} spam emails from {path}")
+	
+	else:
+		raise ValueError(f"Data path must be either a TSV file or a directory: {data_path}")
+	
 	return texts, labels
 
 
