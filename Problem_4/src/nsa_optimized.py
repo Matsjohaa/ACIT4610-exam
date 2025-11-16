@@ -1,6 +1,6 @@
 """Negative Selection Algorithm classifier for spam detection (Problem 4).
 
-Supports both binary Hamming distance and vocabulary-based r-contiguous matching.
+Supports traditional bit-based r-contiguous matching using character n-gram hashing.
 Optimized for fast parameter tuning in analysis scripts.
 """
 
@@ -10,6 +10,7 @@ import random
 import numpy as np
 from typing import List, Sequence, Union, Set
 from collections import Counter
+import hashlib
 
 
 class NegativeSelectionClassifier:
@@ -28,6 +29,7 @@ class NegativeSelectionClassifier:
         seed: int = 42,
         min_activations: int = 1,
         max_ham_match_ratio: float = 0.05,  # Maximum ratio of ham samples a detector can match
+        char_ngram_size: int = 4,  # Size of character n-grams for bit-based encoding
     ) -> None:
         self.feature_length = feature_length
         self.num_detectors = num_detectors
@@ -42,6 +44,7 @@ class NegativeSelectionClassifier:
         self.seed = seed
         self.min_activations = min_activations
         self.max_ham_match_ratio = max_ham_match_ratio
+        self.char_ngram_size = char_ngram_size
         self.detectors = []
         
         # For vocabulary representation
@@ -50,6 +53,72 @@ class NegativeSelectionClassifier:
         
         # For backward compatibility with existing analysis scripts
         self.overlap_threshold = hamming_threshold
+
+    def _text_to_bit_vector(self, text: str, bit_length: int = None) -> np.ndarray:
+        """Convert text to bit vector using character n-gram hashing.
+        
+        This implements traditional NSA bit-based representation:
+        1. Extract character n-grams from text
+        2. Hash each n-gram to bit positions
+        3. Set corresponding bits to 1
+        
+        Args:
+            text: Input text
+            bit_length: Length of bit vector (default: self.feature_length)
+            
+        Returns:
+            Binary numpy array of length bit_length
+        """
+        if bit_length is None:
+            bit_length = self.feature_length
+        
+        bit_vector = np.zeros(bit_length, dtype=np.uint8)
+        text_lower = text.lower()
+        
+        # Extract character n-grams
+        ngram_size = getattr(self, 'char_ngram_size', self.detector_size)
+        
+        for i in range(len(text_lower) - ngram_size + 1):
+            ngram = text_lower[i:i + ngram_size]
+            
+            # Hash n-gram to multiple bit positions (using multiple hash functions for better distribution)
+            for seed in range(3):  # Use 3 different hash functions
+                hash_val = int(hashlib.md5(f"{ngram}{seed}".encode()).hexdigest(), 16)
+                bit_pos = hash_val % bit_length
+                bit_vector[bit_pos] = 1
+        
+        return bit_vector
+
+    def _r_contiguous_match_bits(self, detector: np.ndarray, target: np.ndarray) -> bool:
+        """Check r-contiguous match on bit vectors - requires r_contiguous consecutive matching bit positions.
+        
+        This is the traditional NSA r-contiguous rule applied to bit strings:
+        - Scan through bit positions
+        - Count consecutive positions where both detector[i] == target[i] == 1
+        - Return True if any run is >= r_contiguous
+        
+        Args:
+            detector: Binary detector array
+            target: Binary target array
+            
+        Returns:
+            True if at least r_contiguous consecutive matching 1-bits exist
+        """
+        if len(detector) != len(target):
+            return False
+        
+        consecutive_matches = 0
+        max_consecutive = 0
+        
+        for i in range(len(detector)):
+            # Match only when both bits are 1 (traditional r-contiguous on 1-bits)
+            if detector[i] == 1 and target[i] == 1:
+                consecutive_matches += 1
+                max_consecutive = max(max_consecutive, consecutive_matches)
+            else:
+                consecutive_matches = 0
+        
+        return max_consecutive >= self.r_contiguous
 
     def _build_vocabulary(self, texts: Sequence[str]) -> None:
         """Build vocabulary from texts."""
@@ -107,10 +176,14 @@ class NegativeSelectionClassifier:
     def _matches_pattern(self, detector, target) -> bool:
         """Check if detector matches target using selected rule."""
         if self.representation == "binary":
-            # Binary Hamming distance
-            return np.sum(detector != target) <= self.hamming_threshold
+            # Traditional bit-based matching
+            if self.matching_rule == "r_contiguous":
+                return self._r_contiguous_match_bits(detector, target)
+            else:
+                # Binary Hamming distance
+                return np.sum(detector != target) <= self.hamming_threshold
         else:
-            # Vocabulary-based matching
+            # Vocabulary-based matching (legacy)
             if self.matching_rule == "r_contiguous":
                 return self._r_contiguous_match(detector, target)
             elif self.matching_rule == "hamming":
@@ -298,17 +371,47 @@ class NegativeSelectionClassifier:
                 attempts += 1
         
         else:
-            # Binary representation (for compatibility)
-            print(f"Training binary NSA with Hamming distance...")
-            self_samples = np.array(ham_samples)
-            attempts = 0
+            # Binary representation (bit-based NSA)
+            print(f"Training binary NSA with {self.matching_rule} matching...")
+            print(f"Training on {len(ham_samples)} ham samples (self-only learning)")
             
-            while len(self.detectors) < self.num_detectors and attempts < self.max_attempts:
+            # Convert ham samples to bit vectors
+            ham_bit_vectors = [self._text_to_bit_vector(text) for text in ham_samples]
+            ham_bit_array = np.array(ham_bit_vectors)
+            
+            print(f"  Bit vector length: {self.feature_length}, r_contiguous: {self.r_contiguous}")
+            
+            # Calculate strictness for negative selection
+            max_ham_matches = max(1, int(len(ham_samples) * self.max_ham_match_ratio))
+            print(f"  Ham tolerance: max {max_ham_matches} ham sample matches allowed")
+            
+            attempts = 0
+            max_attempts = self.num_detectors * 2000
+            
+            while len(self.detectors) < self.num_detectors and attempts < max_attempts:
+                # Generate random bit vector
                 cand = np.random.randint(0, 2, size=self.feature_length, dtype=np.uint8)
-                distances = np.sum(self_samples != cand, axis=1)
                 
-                if not np.any(distances <= self.hamming_threshold):
+                # Ensure detector has some 1-bits (avoid all-zeros)
+                if np.sum(cand) < self.r_contiguous:
+                    attempts += 1
+                    continue
+                
+                # Negative selection: test against ham samples
+                ham_matches = 0
+                for ham_vec in ham_bit_vectors:
+                    if self._matches_pattern(cand, ham_vec):
+                        ham_matches += 1
+                        if ham_matches > max_ham_matches:
+                            break
+                
+                # Accept if it doesn't match too many ham samples
+                if ham_matches <= max_ham_matches:
                     self.detectors.append(cand)
+                    
+                    if len(self.detectors) % 100 == 0:
+                        success_rate = len(self.detectors) / attempts * 100 if attempts > 0 else 0
+                        print(f"  Generated {len(self.detectors)}/{self.num_detectors} detectors (success rate: {success_rate:.1f}%)...")
                 
                 attempts += 1
         
@@ -318,12 +421,12 @@ class NegativeSelectionClassifier:
         return self
 
     def predict(self, X: Union[List[str], List[np.ndarray]]) -> List[int]:
-        """Predict labels - classify as spam if any detector matches."""
+        """Predict labels - classify as spam if enough detectors match."""
         predictions = []
         
         for sample in X:
             if self.representation == "vocabulary":
-                # Vocabulary prediction with min_activations support
+                # Vocabulary prediction with min_activations support (legacy)
                 tokens = self._text_to_tokens(sample)
                 if len(tokens) < self.detector_size:
                     predictions.append(0)  # Too short, classify as ham
@@ -355,13 +458,25 @@ class NegativeSelectionClassifier:
                 predictions.append(1 if detector_activations >= self.min_activations else 0)
             
             else:
-                # Binary prediction using minimum activations
+                # Binary/bit-based prediction
+                # Convert text to bit vector
+                if isinstance(sample, str):
+                    sample_vec = self._text_to_bit_vector(sample)
+                else:
+                    sample_vec = sample
+                
+                # Count detector activations
                 activations = 0
                 for detector in self.detectors:
-                    if self._matches_pattern(detector, sample):
+                    if self._matches_pattern(detector, sample_vec):
                         activations += 1
+                        # Early exit if threshold met
+                        if activations >= self.min_activations:
+                            break
                 
                 predictions.append(1 if activations >= self.min_activations else 0)
+        
+        return predictions
         
         return predictions
 

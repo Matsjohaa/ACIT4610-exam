@@ -21,7 +21,7 @@ _PROBLEM_ROOT = _THIS_DIR.parent  # .../Problem_4
 # Available options:
 #   "sms_spam"  - SMS Spam Collection (TSV format, 5,574 messages)
 #   "enron1"    - Enron Email Dataset (directory format, 5,975 emails)
-DATASET: str = "enron1"
+DATASET: str = "sms_spam"
 
 # Dataset paths (automatically determined based on DATASET selection)
 _DATASET_PATHS = {
@@ -42,6 +42,11 @@ VOCAB_MAX_SIZE: int = 4000
 
 # Binary NSA feature representation
 BINARY_FEATURE_LENGTH: int = 128  # Length of binary feature vectors
+
+# Bit-based r-contiguous matching configuration
+BIT_LENGTH: int = 256  # Length of bit vector for character n-gram hashing
+CHAR_NGRAM_SIZE: int = 4  # Size of character n-grams (3 or 4 recommended)
+R_CONTIGUOUS: int = 8  # Number of consecutive matching bits required for r-contiguous match
 
 # NSA (Negative Selection Algorithm) hyperparameters
 NSA_NUM_DETECTORS: int = 1000  # increase detector pool for broader spam coverage
@@ -83,6 +88,9 @@ __all__ = [
 	"VOCAB_MIN_FREQ",
 	"VOCAB_MAX_SIZE",
 	"BINARY_FEATURE_LENGTH",
+	"BIT_LENGTH",
+	"CHAR_NGRAM_SIZE",
+	"R_CONTIGUOUS",
 	"NSA_NUM_DETECTORS",
 	"NSA_DETECTOR_SIZE",
 	"NSA_OVERLAP_THRESHOLD",
