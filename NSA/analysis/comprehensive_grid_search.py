@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """
+THIS IS THE MAIN FILE TO RUN THE ALGORITHM
 COMPREHENSIVE BIT-BASED NSA GRID SEARCH with Full Metrics and Plots
-
-Enhanced version with:
-- Optimized hyperparameter ranges based on initial results
-- ROC-AUC and PR-AUC calculations
-- Detector coverage curves (recall vs. num_detectors)
-- Precision-Recall curves
-- False positive rate on ham
-- Comprehensive reporting
 """
 
 import sys
@@ -66,9 +59,7 @@ if existing_results_file.exists():
 else:
     print(f"\n⚠️  No existing results found - will test all configurations")
 
-# ============================================================================
 # PHASE 1: ENHANCED DETECTOR GENERATION (WITH N-GRAM VARIATIONS)
-# ============================================================================
 print("\n" + "="*80)
 print("PHASE 1: DETECTOR GENERATION (MULTI-NGRAM CONFIGURATIONS)")
 print("="*80)
@@ -112,7 +103,6 @@ for ngram in ngram_sizes:
             {'num': 2000, 'r': 9, 'ratio': 0.05, 'ngram': 3, 'name': '2k_r9_n3'},
         ]
     else:  # ngram == 5
-        # n-gram=5 (NEW): Longer patterns, expect higher precision, lower recall
         # Test with best r values (7, 8, 9)
         configs = [
             {'num': 1000, 'r': 7, 'ratio': 0.05, 'ngram': 5, 'name': '1k_r7_n5'},
@@ -163,9 +153,8 @@ for cfg in detector_configs:
 
 print(f"\n✓ {len(trained_classifiers)} detector sets ready")
 
-# ============================================================================
+
 # PHASE 2: COMPREHENSIVE GRID SEARCH
-# ============================================================================
 print("\n" + "="*80)
 print("PHASE 2: GRID SEARCH (EXTENDED THRESHOLDS)")
 print("="*80)
@@ -274,9 +263,7 @@ for i, config in enumerate(grid):
 
 print(f"\n✓ Complete in {(time.time() - start_time)/60:.1f} min")
 
-# ============================================================================
 # PHASE 3: ROC-AUC AND PR-AUC CALCULATION
-# ============================================================================
 print("\n" + "="*80)
 print("PHASE 3: ROC-AUC AND PR-AUC CALCULATION")
 print("="*80)
@@ -320,9 +307,7 @@ for detector_name in trained_classifiers.keys():
     except Exception as e:
         print(f"  {detector_name}: Could not calculate AUC ({str(e)})")
 
-# ============================================================================
 # PHASE 4: DETECTOR COVERAGE CURVE
-# ============================================================================
 print("\n" + "="*80)
 print("PHASE 4: DETECTOR COVERAGE CURVE (Recall vs. Num Detectors)")
 print("="*80)
@@ -367,9 +352,7 @@ plt.savefig(coverage_plot_path, dpi=300, bbox_inches='tight')
 print(f"✓ Saved: {coverage_plot_path}")
 plt.close()
 
-# ============================================================================
 # PHASE 5: PRECISION-RECALL CURVES
-# ============================================================================
 print("\n" + "="*80)
 print("PHASE 5: PRECISION-RECALL CURVES")
 print("="*80)
@@ -407,9 +390,7 @@ plt.savefig(pr_curve_path, dpi=300, bbox_inches='tight')
 print(f"✓ Saved: {pr_curve_path}")
 plt.close()
 
-# ============================================================================
 # PHASE 6: RESULTS AND ANALYSIS
-# ============================================================================
 print("\n" + "="*80)
 print("🏆 COMPREHENSIVE RESULTS")
 print("="*80)
