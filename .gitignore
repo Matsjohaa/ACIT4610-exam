@@ -23,12 +23,14 @@ env/
 .env.*
 
 # Project outputs
-results/
 runs/
 logs/
 outputs/
 checkpoints/
 models/
-data/
 RL/src/Results/*
 !RL/src/Results/.gitkeep
+
+# NSA - Large files to exclude
+NSA/data/enron1/
+NSA/results/detector_cache_bits/
