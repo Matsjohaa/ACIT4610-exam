@@ -21,32 +21,34 @@ class Ant:
     τ[i][j] = favorability of placing item i and j in the same bin.
 
     Supports a blended heuristic of the form:
-        score(j) ∝ tb(j)^alpha * (item_size^beta) * (tightness(j)^gamma)
-    where tightness(j) = (1 - free_space_ratio_after_placement) and gamma >= 0.
-    gamma=0 reduces to the previous behaviour (no tight-fit blend).
+        score(j) ∝ tb(j)^alpha * tightness(j)^beta
+    where tightness(j) = (1 - free_space_ratio_after_placement).
     """
 
-    def __init__(self, items: np.ndarray, capacity: int, alpha: float = 1.0, beta: float = 2.0, exploration_prob: float = None, gamma: float = 0.0):
+    def __init__(self, items: np.ndarray, capacity: int, alpha: float = 1.0, beta: float = 2.0, exploration_prob: float = None, count_weight: float = 0.0):
         self.items = items
         self.capacity = capacity
         self.n_items = len(items)
         self.alpha = alpha
         self.beta = beta
-        # new heuristic exponent for tight-fit factor (gamma)
-        self.gamma = max(0.0, float(gamma))
-        # per-ant exploration probability (overrides global constant if provided)
+        
+       
         # If None, the ant will fall back to the module-level EXPLORATION_PROB.
         self.exploration_prob = exploration_prob
+        # bonus exponent to favour bins that already contain more items
+        # (count-based heuristic). 0.0 disables this effect.
+        self.count_weight = float(count_weight)
         self.solution = np.zeros(self.n_items, dtype=int)
         self.n_bins = 0
         self.bin_loads: List[int] = []
 
     def _compute_score(self, candidate: int, bin_items: List[int], bin_load: int, pheromone: PheromoneMatrix) -> float:
         """Compute the full selection score for a candidate by combining
-        pheromone (tb^alpha) with the pure heuristic (size^beta * tightness^gamma).
+        pheromone (tb^alpha) with the pure tight-fit heuristic (tightness^beta).
 
         The tight-fit heuristic (size, tightness) is computed by
-        `tight_fit_heuristic`; this method applies the exponents and pheromone.
+        `tight_fit_heuristic`; this method applies the tightness exponent
+        (now controlled by `beta`) and combines with pheromone.
         """
         comps = tight_fit_heuristic(candidate=candidate, bin_items=bin_items, items=self.items, bin_load=bin_load, capacity=self.capacity)
         # heuristic returns 0.0 when candidate doesn't fit, otherwise (size, tightness)
@@ -54,9 +56,14 @@ class Ant:
             return 0.0
         size, tightness = comps
 
-        # apply exponents
-        size_term = float(size) ** float(self.beta)
-        tight_term = (float(tightness) ** float(self.gamma)) if (self.gamma and float(self.gamma) > 0.0) else 1.0
+        # favour placements that leave less free space after placement.
+        tight_term = (float(tightness) ** float(self.beta)) if (self.beta and float(self.beta) > 0.0) else 1.0
+
+        # favour bins that already contain more items (optional)
+        if self.count_weight and bin_items is not None:
+            count_term = float(1 + len(bin_items)) ** float(self.count_weight)
+        else:
+            count_term = 1.0
 
         # average pheromone to items already in the bin
         if not bin_items:
@@ -65,7 +72,7 @@ class Ant:
             vals = [pheromone.get(candidate, k) for k in bin_items]
             tb = float(np.mean(vals)) if vals else float(getattr(pheromone, 'tau_0', 1.0))
 
-        return (tb ** float(self.alpha)) * size_term * tight_term
+        return (tb ** float(self.alpha)) * tight_term * count_term
 
     def construct_solution(self, pheromone: PheromoneMatrix, item_order: np.ndarray = None, current_iter: int = 0, verbose: bool = False, use_local_search: bool = True) -> Tuple[np.ndarray, int, List[Tuple[int, int]]]:
         """
@@ -77,7 +84,7 @@ class Ant:
         already in the bin (or 1.0 if the bin is empty) and Z(j) is the
         item's size (as in the paper).
         """
-        # We'll follow the paper: repeatedly fill one bin at a time. Keep a
+        # Keep a
         # set of remaining items to choose from.
         remaining = set(range(self.n_items))
 

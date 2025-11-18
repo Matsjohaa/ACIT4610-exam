@@ -29,7 +29,7 @@ def tight_fit_heuristic(
         return 0.0
 
     # Return the fundamental components so the caller can apply exponents
-    # (beta, gamma) and combine with pheromone as they see fit.
+    # (beta -> tightness) and combine with pheromone as they see fit.
     # Size (base)
     size_term = size
 
@@ -38,5 +38,6 @@ def tight_fit_heuristic(
     free_ratio = max(0.0, free_after / float(capacity))  # clamp to [0,1]
     tightness = max(0.0, 1.0 - free_ratio)
 
-    # Return tuple (size, tightness). Caller applies beta/gamma and pheromone.
+    # Return tuple (size, tightness). Caller applies tightness exponent (beta)
+    # and combines with pheromone.
     return size_term, tightness

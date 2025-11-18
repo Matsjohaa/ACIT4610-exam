@@ -70,6 +70,9 @@ def _deposit_logic(aco, pheromone, ant_solutions: List[Tuple], items, capacity, 
             except Exception:
                 pass
 
+            # deposit_norm was previously supported; current pheromone.deposit
+            # accepts structure, quality, bin_loads and capacity. Call deposit
+            # with the core arguments and ignore legacy normalization flags.
             pheromone.deposit(repaired_structure, quality, bin_loads=loads_local, capacity=capacity)
         except Exception:
             pass
@@ -89,6 +92,7 @@ def _deposit_logic(aco, pheromone, ant_solutions: List[Tuple], items, capacity, 
                 quality_elite = aco.Q / max(1, aco.best_n_bins)
 
             best_bin_loads = [int(sum(items[i] for i in b)) if b else 0 for b in aco.best_bins]
+            # Global-best deposit: call pheromone.deposit with core args only.
             pheromone.deposit(aco.best_bins, quality_elite, bin_loads=best_bin_loads, capacity=capacity)
         except Exception:
             pass

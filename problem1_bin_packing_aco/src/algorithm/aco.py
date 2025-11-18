@@ -36,25 +36,23 @@ class ACO_BinPacking:
                  n_iterations: int = 100,
                  alpha: float = 1.0,
                  beta: float = 2.0,
-                 gamma: float = 0.0,
                  rho: float = 0.1,
                  Q: float = 1.0,
                  g: int = 1,
-                 exploration_prob: Optional[float] = None):  # frequency of using global-best
+                 exploration_prob: Optional[float] = None,
+                 count_weight: float = 0.0):  # frequency of using global-best
         self.n_ants = n_ants
         self.n_iterations = n_iterations
         self.alpha = alpha
         self.beta = beta
-        # Heuristic tight-fit exponent (0 disables blend)
-        try:
-            self.gamma = max(0.0, float(gamma))
-        except Exception:
-            self.gamma = 0.0
+        # Note: beta controls the tight-fit exponent (tightness influence).
         self.rho = rho
         self.Q = Q
+        # optional exponent to favour bins with more items when constructing
+        # (0.0 disables). Higher positive values bias towards filling bins
+        # with many items already present.
+        self.count_weight = float(count_weight)
 
-        # Deposit quality mode: 'falkenauer' (default) or 'inverse_bins'
-        self.deposit_quality_mode = 'falkenauer'
         # Per-ant exploration override (None to use module defaults)
         self.exploration_prob = exploration_prob
 
@@ -99,9 +97,7 @@ class ACO_BinPacking:
         self.alpha_end = None
         self.beta_start = None
         self.beta_end = None
-        # Optional schedule for gamma (tight-fit heuristic exponent)
-        self.gamma_start = None
-        self.gamma_end = None
+        # (No separate gamma schedule; use beta_start/beta_end if scheduling tightness)
 
         # Optional schedule for exploration probability
         self.exploration_start = None
@@ -157,7 +153,7 @@ class ACO_BinPacking:
                 "capacity": capacity,
                 "alpha": self.alpha,
                 "beta": self.beta,
-                "gamma": getattr(self, 'gamma', 0.0),
+                    "count_weight": getattr(self, 'count_weight', 0.0),
                 "rho": self.rho,
                 "Q": self.Q,
                 "n_ants": self.n_ants,
@@ -229,14 +225,7 @@ class ACO_BinPacking:
                     self.beta = _lerp(float(self.beta_start), float(self.beta_end), t_prog)
             except Exception:
                 pass
-            # Apply gamma schedule if configured
-            try:
-                if getattr(self, 'gamma_start', None) is not None and getattr(self, 'gamma_end', None) is not None:
-                    self.gamma = _lerp(float(self.gamma_start), float(self.gamma_end), t_prog)
-                    if self.gamma < 0.0:
-                        self.gamma = 0.0
-            except Exception:
-                pass
+            # (No gamma schedule — use beta_start/beta_end for tightness scheduling)
             # per-iteration exploration / elitist flags
             # Apply exploration schedule if configured
             cur_exploration = getattr(self, 'exploration_prob', None)

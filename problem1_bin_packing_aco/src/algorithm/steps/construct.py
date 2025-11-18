@@ -18,9 +18,8 @@ def construct_phase(aco, pheromone, items, capacity, iteration: int, cur_explora
     """
     ant_raw = []
     for i in range(aco.n_ants):
-        # pass gamma from solver to ants for blended heuristic
-        # pass gamma from solver to ants for blended heuristic
-        ant = Ant(items, capacity, aco.alpha, aco.beta, exploration_prob=cur_exploration, gamma=getattr(aco, 'gamma', 0.0))
+        # Instantiate ant (beta now controls tightness exponent)
+        ant = Ant(items, capacity, aco.alpha, aco.beta, exploration_prob=cur_exploration, count_weight=getattr(aco, 'count_weight', 0.0))
         solution, raw_n_bins, raw_bins, decisions = ant.construct_solution(
             pheromone,
             current_iter=iteration + 1,
@@ -31,7 +30,6 @@ def construct_phase(aco, pheromone, items, capacity, iteration: int, cur_explora
 
         # preserve the previous debug behaviour: print first ant decisions
 
-        # preserve the previous debug behaviour: print first ant decisions
         if debug and i == 0:
             try:
                 print(f"[DEBUG] Iter {iteration+1} - sample ant decisions (item->bin): {decisions}")
