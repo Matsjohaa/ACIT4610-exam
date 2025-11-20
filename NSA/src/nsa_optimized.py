@@ -1,0 +1,504 @@
+"""Negative Selection Algorithm classifier for spam detection (Problem 4).
+
+Supports traditional bit-based r-contiguous matching using character n-gram hashing.
+Optimized for fast parameter tuning in analysis scripts.
+"""
+
+from __future__ import annotations
+
+import random
+import numpy as np
+from typing import List, Sequence, Union, Set
+from collections import Counter
+import hashlib
+
+
+class NegativeSelectionClassifier:
+    def __init__(
+        self,
+        feature_length: int = 128,
+        num_detectors: int = 500,
+        detector_size: int = 3,
+        hamming_threshold: int = 5,
+        r_contiguous: int = 2,
+        matching_rule: str = "hamming",  # "hamming" or "r_contiguous"
+        representation: str = "vocabulary",  # "binary" or "vocabulary" 
+        vocab_size: int = 5000,
+        min_word_freq: int = 2,
+        max_attempts: int = 10000,
+        seed: int = 42,
+        min_activations: int = 1,
+        max_ham_match_ratio: float = 0.05,  # Maximum ratio of ham samples a detector can match
+        char_ngram_size: int = 4,  # Size of character n-grams for bit-based encoding
+    ) -> None:
+        self.feature_length = feature_length
+        self.num_detectors = num_detectors
+        self.detector_size = detector_size
+        self.hamming_threshold = hamming_threshold
+        self.r_contiguous = r_contiguous
+        self.matching_rule = matching_rule
+        self.representation = representation
+        self.vocab_size = vocab_size
+        self.min_word_freq = min_word_freq
+        self.max_attempts = max_attempts
+        self.seed = seed
+        self.min_activations = min_activations
+        self.max_ham_match_ratio = max_ham_match_ratio
+        self.char_ngram_size = char_ngram_size
+        self.detectors = []
+        
+        # For vocabulary representation
+        self.vocabulary = []
+        self.word_to_idx = {}
+        
+        # For backward compatibility with existing analysis scripts
+        self.overlap_threshold = hamming_threshold
+
+    def _text_to_bit_vector(self, text: str, bit_length: int = None) -> np.ndarray:
+        """Convert text to bit vector using character n-gram hashing.
+        
+        This implements traditional NSA bit-based representation:
+        1. Extract character n-grams from text
+        2. Hash each n-gram to bit positions
+        3. Set corresponding bits to 1
+        
+        Args:
+            text: Input text
+            bit_length: Length of bit vector (default: self.feature_length)
+            
+        Returns:
+            Binary numpy array of length bit_length
+        """
+        if bit_length is None:
+            bit_length = self.feature_length
+        
+        bit_vector = np.zeros(bit_length, dtype=np.uint8)
+        text_lower = text.lower()
+        
+        # Extract character n-grams
+        ngram_size = getattr(self, 'char_ngram_size', self.detector_size)
+        
+        for i in range(len(text_lower) - ngram_size + 1):
+            ngram = text_lower[i:i + ngram_size]
+            
+            # Hash n-gram to multiple bit positions (using multiple hash functions for better distribution)
+            for seed in range(3):  # Use 3 different hash functions
+                hash_val = int(hashlib.md5(f"{ngram}{seed}".encode()).hexdigest(), 16)
+                bit_pos = hash_val % bit_length
+                bit_vector[bit_pos] = 1
+        
+        return bit_vector
+
+    def _r_contiguous_match_bits(self, detector: np.ndarray, target: np.ndarray) -> bool:
+        """Check r-contiguous match on bit vectors - requires r_contiguous consecutive matching bit positions.
+        
+        This is the traditional NSA r-contiguous rule applied to bit strings:
+        - Scan through bit positions
+        - Count consecutive positions where both detector[i] == target[i] == 1
+        - Return True if any run is >= r_contiguous
+        
+        Args:
+            detector: Binary detector array
+            target: Binary target array
+            
+        Returns:
+            True if at least r_contiguous consecutive matching 1-bits exist
+        """
+        if len(detector) != len(target):
+            return False
+        
+        consecutive_matches = 0
+        max_consecutive = 0
+        
+        for i in range(len(detector)):
+            # Match only when both bits are 1 (traditional r-contiguous on 1-bits)
+            if detector[i] == 1 and target[i] == 1:
+                consecutive_matches += 1
+                max_consecutive = max(max_consecutive, consecutive_matches)
+            else:
+                consecutive_matches = 0
+        
+        return max_consecutive >= self.r_contiguous
+
+    def _build_vocabulary(self, texts: Sequence[str]) -> None:
+        """Build vocabulary from texts."""
+        word_counts = Counter()
+        for text in texts:
+            words = text.lower().split()
+            word_counts.update(words)
+        
+        vocab_words = [
+            word for word, count in word_counts.items() 
+            if count >= self.min_word_freq
+        ]
+        vocab_words.sort(key=lambda w: (-word_counts[w], w))
+        self.vocabulary = vocab_words[:self.vocab_size]
+        self.word_to_idx = {word: i for i, word in enumerate(self.vocabulary)}
+
+    def _text_to_tokens(self, text: str) -> List[int]:
+        """Convert text to token indices."""
+        words = text.lower().split()
+        return [self.word_to_idx[word] for word in words if word in self.word_to_idx]
+
+    def _get_patterns_from_tokens(self, tokens: List[int]) -> Set[tuple]:
+        """Extract detector-sized patterns from tokens."""
+        patterns = set()
+        for i in range(len(tokens) - self.detector_size + 1):
+            pattern = tuple(tokens[i:i + self.detector_size])
+            patterns.add(pattern)
+        return patterns
+
+    def _r_contiguous_match(self, detector: tuple, target: tuple) -> bool:
+        """Check r-contiguous match - requires r_contiguous consecutive matching positions."""
+        if len(detector) != len(target):
+            return False
+        
+        consecutive_matches = 0
+        max_consecutive = 0
+        
+        for i in range(len(detector)):
+            if detector[i] == target[i]:
+                consecutive_matches += 1
+                max_consecutive = max(max_consecutive, consecutive_matches)
+            else:
+                consecutive_matches = 0
+        
+        return max_consecutive >= self.r_contiguous
+
+    def _hamming_match_vocab(self, detector: tuple, target: tuple) -> bool:
+        """Check Hamming match for vocabulary patterns."""
+        if len(detector) != len(target):
+            return False
+        
+        mismatches = sum(1 for i in range(len(detector)) if detector[i] != target[i])
+        return mismatches <= self.hamming_threshold
+
+    def _matches_pattern(self, detector, target) -> bool:
+        """Check if detector matches target using selected rule."""
+        if self.representation == "binary":
+            # Traditional bit-based matching
+            if self.matching_rule == "r_contiguous":
+                return self._r_contiguous_match_bits(detector, target)
+            else:
+                # Binary Hamming distance
+                return np.sum(detector != target) <= self.hamming_threshold
+        else:
+            # Vocabulary-based matching (legacy)
+            if self.matching_rule == "r_contiguous":
+                return self._r_contiguous_match(detector, target)
+            elif self.matching_rule == "hamming":
+                return self._hamming_match_vocab(detector, target)
+        return False
+
+    def _random_detector_vocab(self) -> tuple:
+        """Generate vocabulary detector with better distribution strategy."""
+        # Mix of purely random and vocabulary-based patterns
+        if random.random() < 0.7:  # 70% - Pure random from vocabulary
+            return tuple(random.randint(0, len(self.vocabulary) - 1) for _ in range(self.detector_size))
+        else:  # 30% - Sample from most common words (more likely to match real text)
+            common_words = list(range(min(50, len(self.vocabulary))))  # Top 50 most common words
+            return tuple(random.choice(common_words) for _ in range(self.detector_size))
+    
+    def _create_pattern_variation(self, base_pattern: tuple) -> tuple:
+        """Create a variation of an existing pattern."""
+        variation = list(base_pattern)
+        
+        if self.matching_rule == "hamming" and self.hamming_threshold > 0:
+            # Create variation that differs by up to hamming_threshold+1 positions
+            # This ensures the variation won't match under the current threshold
+            num_changes = random.randint(self.hamming_threshold + 1, min(self.hamming_threshold + 2, len(variation)))
+            positions = random.sample(range(len(variation)), num_changes)
+            for pos in positions:
+                variation[pos] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+        
+        elif self.matching_rule == "r_contiguous":
+            # For r-contiguous: break potential contiguous runs by strategically placing changes
+            # We need to ensure no r_contiguous consecutive matches exist
+            # Strategy: Change every r_contiguous-th position to break all long runs
+            for i in range(0, len(variation), max(1, self.r_contiguous - 1)):
+                variation[i] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+        
+        else:
+            # Fallback: change multiple random positions
+            num_changes = random.randint(1, max(2, len(variation) // 2))
+            positions = random.sample(range(len(variation)), num_changes)
+            for pos in positions:
+                variation[pos] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+    
+    def _create_spam_detector_variation(self, base_pattern: tuple) -> tuple:
+        """Create a SMALL variation of spam pattern that still matches under current rule."""
+        variation = list(base_pattern)
+        
+        if self.matching_rule == "hamming" and self.hamming_threshold > 0:
+            # Change UP TO hamming_threshold positions (so it still matches)
+            num_changes = random.randint(1, min(self.hamming_threshold, len(variation)))
+            positions = random.sample(range(len(variation)), num_changes)
+            for pos in positions:
+                variation[pos] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+        
+        elif self.matching_rule == "r_contiguous":
+            # For r-contiguous: change positions but preserve at least r_contiguous consecutive matches
+            # Strategy: Only change positions at edges or with gaps >= r_contiguous
+            safe_positions = []
+            # Keep middle section intact, only change edges
+            if len(variation) > self.r_contiguous:
+                # Can change first few and last few positions
+                edge_size = max(1, (len(variation) - self.r_contiguous) // 2)
+                safe_positions = list(range(edge_size)) + list(range(len(variation) - edge_size, len(variation)))
+            
+            if safe_positions:
+                pos = random.choice(safe_positions)
+                variation[pos] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+        
+        else:
+            # Fallback: small random change (1-2 positions)
+            num_changes = random.randint(1, min(2, len(variation)))
+            positions = random.sample(range(len(variation)), num_changes)
+            for pos in positions:
+                variation[pos] = random.randint(0, len(self.vocabulary) - 1)
+            return tuple(variation)
+
+    def fit(self, X: Union[List[str], List[np.ndarray]], y: List[int]):
+        """Generate detectors trained on both ham and spam patterns."""
+        if hasattr(self, 'seed') and self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
+        self.detectors = []
+        
+        # Extract ham and spam samples separately
+        ham_samples = [x for x, label in zip(X, y) if label == 0]
+        spam_samples = [x for x, label in zip(X, y) if label == 1]
+        
+        if self.representation == "vocabulary":
+            print(f"Training PURE NSA with {self.matching_rule} matching (self-only learning)...")
+            print(f"Training on {len(ham_samples)} ham samples (self) - spam samples NOT used for detector generation")
+            
+            # Build vocabulary from all samples (shared feature space is acceptable)
+            self._build_vocabulary(X)
+            if len(self.vocabulary) == 0:
+                print("Warning: No vocabulary built")
+                return self
+            
+            # PURE NSA: Extract ham patterns to avoid (self-tolerance)
+            ham_pattern_sets = []
+            all_ham_patterns = set()  # Collect ALL unique ham patterns
+            for text in ham_samples:
+                tokens = self._text_to_tokens(text)
+                patterns = self._get_patterns_from_tokens(tokens)
+                ham_pattern_sets.append(patterns)
+                all_ham_patterns.update(patterns)
+            
+            print(f"  Extracted {sum(len(ps) for ps in ham_pattern_sets)} total ham patterns ({len(all_ham_patterns)} unique)")
+            
+            # IMPROVED PURE NSA STRATEGY: Generate detectors by MUTATING ham patterns
+            # This is theoretically sound pure NSA: we learn what "self" looks like,
+            # then generate "near-self" patterns that fail self-tolerance tests.
+            # These mutations are more likely to match real anomalies than random patterns.
+            
+            print(f"Generating {self.num_detectors} detectors via mutation-based negative selection...")
+            print(f"  Strategy: Mutate ham patterns, verify they don't match ham")
+            
+            detector_set = set()  # Track unique detectors
+            vocab_size = len(self.vocabulary)
+            
+            # Convert ham patterns to list for sampling
+            ham_pattern_list = list(all_ham_patterns)
+            print(f"  Using {len(ham_pattern_list)} unique ham patterns as mutation templates")
+            
+            # CRITICAL FIX: Use MUCH stricter tolerance
+            # Old: allowed matching up to 5% of ham samples (147 samples!)
+            # New: Reject if detector matches ham patterns in > 0.5% of samples
+            effective_ham_ratio = 0.005  # Ultra-strict: 0.5% tolerance
+            max_ham_matches = max(1, int(len(ham_samples) * effective_ham_ratio))
+            print(f"  Ham tolerance: max {max_ham_matches} ham sample matches allowed (ultra-strict)")
+            
+            attempts = 0
+            max_attempts = self.num_detectors * 2000  # Increase attempts since it's harder now
+            
+            # ADAPTIVE MUTATION: Start with small mutations, increase if needed
+            # For detector_size=4, mutate 1-2 positions initially
+            mutations_per_pattern = max(1, self.detector_size // 2)  # Mutate ~50% of positions
+            
+            while len(self.detectors) < self.num_detectors and attempts < max_attempts:
+                # Sample a random ham pattern as template
+                if ham_pattern_list:
+                    template = random.choice(ham_pattern_list)
+                else:
+                    # Fallback to pure random if no ham patterns
+                    template = tuple(random.randint(0, vocab_size - 1) for _ in range(self.detector_size))
+                
+                # Mutate the pattern by changing random positions
+                mutated = list(template)
+                positions_to_mutate = random.sample(range(len(mutated)), min(mutations_per_pattern, len(mutated)))
+                
+                for pos in positions_to_mutate:
+                    # Replace with a different random vocab index
+                    new_val = random.randint(0, vocab_size - 1)
+                    # Ensure it's actually different
+                    while new_val == mutated[pos] and vocab_size > 1:
+                        new_val = random.randint(0, vocab_size - 1)
+                    mutated[pos] = new_val
+                
+                candidate = tuple(mutated)
+                
+                # Skip if duplicate or if it's exactly a ham pattern
+                if candidate in detector_set or candidate in all_ham_patterns:
+                    attempts += 1
+                    continue
+                
+                # NEGATIVE SELECTION: Test candidate against ham samples
+                ham_matches = 0
+                for pattern_set in ham_pattern_sets:
+                    for pattern in pattern_set:
+                        if self._matches_pattern(candidate, pattern):
+                            ham_matches += 1
+                            break
+                
+                # Accept if it doesn't match too many ham samples
+                if ham_matches <= max_ham_matches:
+                    self.detectors.append(candidate)
+                    detector_set.add(candidate)
+                    
+                    if len(self.detectors) % 100 == 0:
+                        success_rate = len(self.detectors) / attempts * 100 if attempts > 0 else 0
+                        print(f"  Generated {len(self.detectors)}/{self.num_detectors} detectors (success rate: {success_rate:.1f}%)...")
+                
+                attempts += 1
+        
+        else:
+            # Binary representation (bit-based NSA)
+            print(f"Training binary NSA with {self.matching_rule} matching...")
+            print(f"Training on {len(ham_samples)} ham samples (self-only learning)")
+            
+            # Convert ham samples to bit vectors
+            ham_bit_vectors = [self._text_to_bit_vector(text) for text in ham_samples]
+            ham_bit_array = np.array(ham_bit_vectors)
+            
+            print(f"  Bit vector length: {self.feature_length}, r_contiguous: {self.r_contiguous}")
+            
+            # Calculate strictness for negative selection
+            max_ham_matches = max(1, int(len(ham_samples) * self.max_ham_match_ratio))
+            print(f"  Ham tolerance: max {max_ham_matches} ham sample matches allowed")
+            
+            attempts = 0
+            max_attempts = self.num_detectors * 2000
+            
+            while len(self.detectors) < self.num_detectors and attempts < max_attempts:
+                # Generate random bit vector
+                cand = np.random.randint(0, 2, size=self.feature_length, dtype=np.uint8)
+                
+                # Ensure detector has some 1-bits (avoid all-zeros)
+                if np.sum(cand) < self.r_contiguous:
+                    attempts += 1
+                    continue
+                
+                # Negative selection: test against ham samples
+                ham_matches = 0
+                for ham_vec in ham_bit_vectors:
+                    if self._matches_pattern(cand, ham_vec):
+                        ham_matches += 1
+                        if ham_matches > max_ham_matches:
+                            break
+                
+                # Accept if it doesn't match too many ham samples
+                if ham_matches <= max_ham_matches:
+                    self.detectors.append(cand)
+                    
+                    if len(self.detectors) % 100 == 0:
+                        success_rate = len(self.detectors) / attempts * 100 if attempts > 0 else 0
+                        print(f"  Generated {len(self.detectors)}/{self.num_detectors} detectors (success rate: {success_rate:.1f}%)...")
+                
+                attempts += 1
+        
+        print(f"Detector generation complete: {len(self.detectors)} detectors generated")
+        if len(self.detectors) == 0:
+            print(f"  No detectors generated for {dict(num_detectors=self.num_detectors, detector_size=self.detector_size, **{k: getattr(self, k) for k in ['hamming_threshold', 'r_contiguous'] if hasattr(self, k)}, matching_rule=self.matching_rule)}")
+        return self
+
+    def predict(self, X: Union[List[str], List[np.ndarray]]) -> List[int]:
+        """Predict labels - classify as spam if enough detectors match."""
+        predictions = []
+        
+        for sample in X:
+            if self.representation == "vocabulary":
+                # Vocabulary prediction with min_activations support (legacy)
+                tokens = self._text_to_tokens(sample)
+                if len(tokens) < self.detector_size:
+                    predictions.append(0)  # Too short, classify as ham
+                    continue
+                
+                # Count how many detectors match patterns in the text
+                detector_activations = 0
+                matched_detectors = set()  # Track unique detector matches
+                
+                for i in range(len(tokens) - self.detector_size + 1):
+                    pattern = tuple(tokens[i:i + self.detector_size])
+                    
+                    # Check which detectors match this pattern
+                    for detector_idx, detector in enumerate(self.detectors):
+                        if detector_idx not in matched_detectors:  # Count each detector only once
+                            if self._matches_pattern(detector, pattern):
+                                matched_detectors.add(detector_idx)
+                                detector_activations += 1
+                                
+                                # Early exit if we have enough activations
+                                if detector_activations >= self.min_activations:
+                                    break
+                    
+                    # Early exit if threshold met
+                    if detector_activations >= self.min_activations:
+                        break
+                
+                # Classify as spam only if enough detectors activated
+                predictions.append(1 if detector_activations >= self.min_activations else 0)
+            
+            else:
+                # Binary/bit-based prediction
+                # Convert text to bit vector
+                if isinstance(sample, str):
+                    sample_vec = self._text_to_bit_vector(sample)
+                else:
+                    sample_vec = sample
+                
+                # Count detector activations
+                activations = 0
+                for detector in self.detectors:
+                    if self._matches_pattern(detector, sample_vec):
+                        activations += 1
+                        # Early exit if threshold met
+                        if activations >= self.min_activations:
+                            break
+                
+                predictions.append(1 if activations >= self.min_activations else 0)
+        
+        return predictions
+        
+        return predictions
+
+    def get_info(self) -> dict:
+        """Get classifier information for analysis."""
+        info = {
+            "num_detectors": len(self.detectors),
+            "detector_size": self.detector_size,
+            "matching_rule": self.matching_rule,
+            "representation": self.representation,
+        }
+        
+        if self.representation == "vocabulary":
+            info.update({
+                "vocabulary_size": len(self.vocabulary),
+                "r_contiguous": self.r_contiguous if self.matching_rule == "r_contiguous" else None,
+                "hamming_threshold": self.hamming_threshold if self.matching_rule == "hamming" else None,
+            })
+        else:
+            info.update({
+                "hamming_threshold": self.hamming_threshold,
+                "min_activations": self.min_activations,
+            })
+        
+        return info
