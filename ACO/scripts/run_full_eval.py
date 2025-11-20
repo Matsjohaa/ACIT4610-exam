@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Ensure project root is on PYTHONPATH so `src` can be imported when running
-# this script directly from the `problem1_bin_packing_aco` folder.
+# this script directly from the `aco` (project root) folder.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -286,7 +286,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Ensure project root is on PYTHONPATH so `src` can be imported when running
-# this script directly from the `problem1_bin_packing_aco` folder.
+# this script directly from the `aco` (project root) folder.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

@@ -11,7 +11,7 @@ This folder contains results produced by running the project's Intensive preset 
 How the runs were launched
 -------------------------
 
-Each instance was started with environment variables to control the runner and run in the background. Example invocation used for each instance (executed from the repository root `problem1_bin_packing_aco`):
+Each instance was started with environment variables to control the runner and run in the background. Example invocation used for each instance (executed from the repository root `aco`):
 
 ```
 # Use PRESET=INTENSIVE (or FAST_EVAL_PRESET) to select the preset.

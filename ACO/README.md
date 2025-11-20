@@ -52,7 +52,7 @@ For the experiments and results reported in this project we used the following b
 ## File Structure
 
 ```
-problem1_bin_packing_aco/
+aco/
 ├── README.md                     
 ├── requirements.txt                
 ├── data/
@@ -94,7 +94,7 @@ problem1_bin_packing_aco/
 
 ## Quick Start
 
-Run from the project root (`problem1_bin_packing_aco/`):
+Run from the project root (`aco/`):
 
 ```bash
 # Create and activate a virtual environment (recommended)
@@ -146,7 +146,7 @@ Key behavior:
 - Local search is disabled in the evaluation mode used for quick batch runs.
 - Results directory: `results/full_evaluation/<instance>/` (e.g. `results/full_evaluation/u250_00/`) contains `summary_<instance>.csv`, `baseline.csv`, a status file `<instance>.status`, and a `plots/` folder with PNGs.
 
-Examples (run from project root `problem1_bin_packing_aco/`):
+Examples (run from project root `aco/`):
 
 ```bash
 # Run only instance u250_00 with seeds 1..4 (INTENSIVE preset):

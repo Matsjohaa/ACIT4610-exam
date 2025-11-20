@@ -20,7 +20,7 @@ BENCHMARKS = [
     "binpack8.txt",
 ]
 
-def download_data(output_dir: str = "problem1_bin_packing_aco/data/raw"):
+def download_data(output_dir: str = "aco/data/raw"):
     """Download all OR-Library bin packing instances"""
     
     # Create output directory

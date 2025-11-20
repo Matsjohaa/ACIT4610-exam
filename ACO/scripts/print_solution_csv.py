@@ -5,7 +5,7 @@ Each column is a bin (Bin 1 .. Bin N). Each row lists one item inside the
 corresponding bin. Empty cells are left blank.
 
 Usage examples:
-    # From the project folder (problem1_bin_packing_aco/):
+    # From the project folder (aco/):
     python3 print_solution_csv.py --instance u500_02 --preset QUICK_TEST --iterations 120 --n-ants 24 --no-ls
 
 The script will import the local `src` package (same as `quick_test.py`).
