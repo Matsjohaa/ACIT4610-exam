@@ -67,5 +67,3 @@ All produced outputs described above live under `results/full_evaluation/<instan
 - `results/full_evaluation/<instance>/plots/`
 - `run_<instance>.log`
 
-If you want, I can now collect the `summary_*.csv` files and produce a short table of runtimes and best-found bin counts for inclusion in the report.
-
