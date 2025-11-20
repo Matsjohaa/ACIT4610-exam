@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# IDEs
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.ipynb_checkpoints/
+.venv*/
+venv/
+env/
+
+# Secrets / env
+.env
+.env.*
+
+# Project outputs
+runs/
+logs/
+outputs/
+checkpoints/
+models/
+RL/src/Results/*
+!RL/src/Results/.gitkeep
+
+# NSA - Large files to exclude
+NSA/data/enron1/
+NSA/results/detector_cache_bits/
