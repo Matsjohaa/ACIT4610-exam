@@ -2,8 +2,15 @@
 
 Implements bin-centric construction procedure:
 - build bins one-by-one, repeatedly choosing a feasible item
-- selection probability ∝ (avg pheromone to current bin)^alpha * (item size)^beta
+- selection probability ∝ (avg pheromone to current bin)^alpha * tightness^beta
 - optional exploration, optional local repair
+
+Note: the heuristic module returns both an item "size" and a "tightness" value,
+but the current ant scoring uses only the tightness component (exponentiated by
+`beta`). The size term is returned for completeness/future use but is not used
+by the current `_compute_score` implementation. A `gamma` CLI option exists in
+some runner scripts but is not wired into the core solver; `beta` controls the
+tight-fit influence in the codebase.
 
 Returns the item-to-bin assignment, bin structure, and the placement decisions.
 """
@@ -49,6 +56,10 @@ class Ant:
         The tight-fit heuristic (size, tightness) is computed by
         `tight_fit_heuristic`; this method applies the tightness exponent
         (now controlled by `beta`) and combines with pheromone.
+        
+        Note: the `tight_fit_heuristic` returns `(size, tightness)`. The `size`
+        component is currently unused — only `tightness` is raised to the
+        `beta` power and contributes to the selection score.
         """
         comps = tight_fit_heuristic(candidate=candidate, bin_items=bin_items, items=self.items, bin_load=bin_load, capacity=self.capacity)
         # heuristic returns 0.0 when candidate doesn't fit, otherwise (size, tightness)

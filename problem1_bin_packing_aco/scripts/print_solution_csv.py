@@ -15,9 +15,11 @@ import sys
 from pathlib import Path
 import argparse
 
-# Ensure local `src` package is importable: add the project root (the parent of `src`) to sys.path
-# This makes `import src.*` work regardless of current working directory.
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Resolve project root so this script can be moved to `scripts/` safely.
+_candidate = Path(__file__).parent
+if not (_candidate / "src").exists():
+    _candidate = _candidate.parent
+sys.path.insert(0, str(_candidate))
 
 from src.data.loader import load_beasley_format
 from src.algorithm.aco import ACO_BinPacking

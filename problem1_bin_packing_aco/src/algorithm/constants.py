@@ -15,8 +15,8 @@ QUICK_TEST = {
 
 # Default preset: moderate colony, balanced pheromone/heuristic mix.
 FAST = {
-    'n_ants': 64,
-    'n_iterations': 120,
+    'n_ants': 16,
+    'n_iterations': 100,
     'alpha': 2.0,
     'beta': 1.0,
     'rho': 0.02,
@@ -26,20 +26,20 @@ FAST = {
 # Balanced exploration: larger colony with slower evaporation.
 BALANCED = {
     'n_ants': 32,
-    'n_iterations': 200,
-    'alpha': 1.0,
-    'beta': 1.5,    
-    'rho': 0.15,
-    'Q': 10.0,
+    'n_iterations': 120,
+    'alpha': 2.0,
+    'beta': 1.0,    
+    'rho': 0.02,
+    'Q': 100.0,
 }
 
 # Intensive search: deep run with strong pheromone exploitation.
 INTENSIVE = {
-    'n_ants': 48,
-    'n_iterations': 500,   
-    'alpha': 1.0,
+    'n_ants': 90,
+    'n_iterations': 200,   
+    'alpha': 2.0,
     'beta': 1.0,    
-    'rho': 0.10,    
+    'rho': 0.02,    
     'Q': 10.0,
 }
 
@@ -53,21 +53,11 @@ TAU_0 = 0.2
 TAU_MIN = 0.01
 TAU_MAX = 2.0
 
-# Number of discrete fill classes to describe resulting bin fill levels
-# after placing an item. Higher granularity can capture more nuanced
-# preferences but may require more iterations to learn.
-FILL_CLASSES = 10
-
-
-# ============= Heuristic Settings =============
-# EPSILON: tiny constant to avoid division by zero in heuristics or probability scaling.
-EPSILON = 1e-6
-
 
 # ============= Stagnation / Duplicate Handling =============
 # How many iterations without improvement before triggering stagnation
 # handling (compression / diversification).
-NO_IMPROVEMENT_LIMIT = 40
+NO_IMPROVEMENT_LIMIT = 50
 
 # If the same repaired bin-structure has been seen this many times,
 # apply a multiplicative penalty to its deposit quality.

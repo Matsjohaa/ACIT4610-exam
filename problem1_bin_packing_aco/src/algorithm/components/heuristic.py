@@ -40,4 +40,8 @@ def tight_fit_heuristic(
 
     # Return tuple (size, tightness). Caller applies tightness exponent (beta)
     # and combines with pheromone.
+    # Note: the `size_term` is returned for completeness and possible future
+    # use, but the current ant scoring uses only `tightness` (raised to the
+    # `beta` exponent). See `src/algorithm/components/ant.py` for how the
+    # heuristic components are combined with pheromone.
     return size_term, tightness

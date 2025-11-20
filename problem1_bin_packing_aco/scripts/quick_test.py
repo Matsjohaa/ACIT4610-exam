@@ -10,7 +10,11 @@ import sys
 import argparse
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Resolve project root so this script can be moved to `scripts/` safely.
+_candidate = Path(__file__).parent
+if not (_candidate / "src").exists():
+    _candidate = _candidate.parent
+sys.path.insert(0, str(_candidate))
 
 from src.data.loader import load_beasley_format
 from src.algorithm.aco import ACO_BinPacking
@@ -39,7 +43,11 @@ def load_instance(name: str):
     if data_file is None:
         raise ValueError("Only the uniform sets u120/u250/u500/u1000 are supported in this quick test.")
 
-    data_path = Path(__file__).parent / "data" / "raw" / data_file
+    candidate = Path(__file__).parent
+    if not (candidate / "src").exists():
+        candidate = candidate.parent
+
+    data_path = candidate / "data" / "raw" / data_file
     instances = load_beasley_format(str(data_path))
     for inst in instances:
         if inst.name == name:
@@ -103,3 +111,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

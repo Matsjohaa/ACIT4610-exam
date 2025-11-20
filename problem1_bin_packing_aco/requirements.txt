@@ -1,0 +1,5 @@
+# Minimal dependencies required to run Problem 1 (Bin Packing ACO)
+numpy
+matplotlib
+requests
+

@@ -1,0 +1,5 @@
+instance,seed,n_bins,total_unused_capacity,runtime,iterations_to_best
+u250_02,1,106,687,736.2089,40
+u250_02,2,106,687,736.9858,32
+u250_02,3,106,687,737.4798,51
+u250_02,4,106,687,736.8069,49
