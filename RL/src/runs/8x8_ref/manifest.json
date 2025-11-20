@@ -1,0 +1,13 @@
+{
+  "env_map": "8x8",
+  "episodes": 80000,
+  "epsilon_schedule": "exp",
+  "alpha": 0.8,
+  "gamma": 0.99,
+  "seed": 42,
+  "step_penalty": 0.0,
+  "run_dir": "/Users/kristina/ACIT4610/ACIT4610-exam/RL/src/runs/8x8_ref",
+  "optimistic_init": 0.0,
+  "alpha_schedule": "const",
+  "alpha_min": 0.1
+}
